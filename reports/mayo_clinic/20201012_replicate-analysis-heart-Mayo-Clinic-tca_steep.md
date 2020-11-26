@@ -93,11 +93,12 @@ plot_df <- countdata_df %>%
 
 # Plot Boxplots faceted by shared metabolites
 ################################################################################
-plot_df %>%
+p <- plot_df %>%
   ggplot(aes(y = METABOLITE_NAME, x = VALUE, color = REPLICATE)) +
   geom_boxplot(alpha = 0.8) +
   labs(title=paste0(tissue,' ',study_institute_metab_family,": Original Metabolite Abundances"),
              x = "Abundance", y = "") 
+plot(p)
 ```
 
 ![](/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/mayo_clinic/20201012_replicate-analysis-heart-Mayo-Clinic-tca_steep_files/figure-gfm/Boxplots%20and%20Density%20Plots%20to%20Measure%20Normalization-1.png)<!-- -->
