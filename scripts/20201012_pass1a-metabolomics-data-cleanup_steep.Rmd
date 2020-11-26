@@ -1,8 +1,8 @@
 ---
-title: "PASS1A (Rat) Metabolomics: Data Cleanup"
+title: "PASS1A (Rat) Metabolomics: Site-Specific EDA--Mayo Clinic"
 author: "Steep"
 date: "10/12/2020"
-output: html_document
+output: github
 ---
 
 ```{r setup, include=FALSE}
@@ -21,6 +21,22 @@ knitr::opts_chunk$set(cache = FALSE)
 -No drift correction
 -No imputation
 -Samples were divided into batches of ~20 for analysis
+
+# Questions for Mayo:
+-What was the role of QC_POOLED and QC_REFERENCE samples?
+-How were QC samples divided across runs?
+-"raw_file" seems to represent a date and an additiona number (date_#)
+  -What is the significance of this number? Does it represent a sample order
+-How was "sample_order" determined?
+-How were batches divided across samples and QCs?
+-Why were some tissues replicated?
+-Demonstrate correlation (or lack thereof) for certain replicate runs.
+
+# Some runs from Mayo have duplicate abundance measurements
+Metabolite families:
+-ac, amines, cer, tca
+Within Tissues:
+-liver, gastrocnemius, white-adipose, lung, heart, brown-adipose, kidney
 
 ## Setup the Environment
 ```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE, echo = FALSE}
@@ -49,7 +65,8 @@ if(COMP == "MacBook"){
 
 # Load dependencies
 pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","sfsmisc",
-                "pheatmap","caret","ggforce","RANN","kableExtra","gtools","combinat")
+                "pheatmap","caret","ggforce","RANN","kableExtra","gtools","combinat",
+                "knitr","markdown","rmarkdown")
 lapply(pacs...man, FUN = function(X) {
         do.call("library", list(X)) })
 
@@ -110,29 +127,22 @@ source(paste0(WD,'/functions/PowerMatrix.R'))
 # Should shared metabolites and samples be calculated?
 ###################################
 COLLECT_SHARED <- FALSE
-
 # Dataset
 ###################################
 dataset <- 'targeted'
-
 # Named
 ###################################
 named <- 'named'
-
 # Tissue
 ###################################
 tissue <- 'liver'
-
 # Metabolite family
 ###################################
 metab_family <- 'amines'
-
 # Correlation
 ###################################
 #Corr <- 'Pearson'
 Corr <- 'Spearman'
-
-
 ```
 
 # Load the Metadata and Count Data
@@ -145,7 +155,7 @@ metadata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-metadata-table_st
 metadata_df <- readRDS(file = metadata_rds)
 
 metadata_df %>%
-  head(n =2) %>% kbl() %>% kable_styling()
+  head(n =5)
 
 # Start the clock
 ptm <- proc.time()
@@ -196,7 +206,7 @@ ec_colors <- c('gold',
                'steelblue4')
 
 pheno_df %>%
-  head(n =2) %>% kbl() %>% kable_styling()
+  head(n =6)
 ```
 
 # Visualize the number of samples and number of metabolites across all "named" batches
@@ -340,19 +350,6 @@ p <- countdata_df %>%
 }
 
 ```
-# Questions for Mayo:
--What was the role of QC_POOLED and QC_REFERENCE samples?
--How were QC samples divided across runs?
--"raw_file" seems to represent a date and an additiona number (date_#)
-  -What is the significance of this number? Does it represent a sample order
--How was "sample_order" determined?
--How were batches divided across samples and QCs?
-
-# Some runs from Mayo have duplicate abundance measurements
-Metabolite families:
--ac, amines, cer, tca
-Within Tissues:
--liver, gastrocnemius, white-adipose, lung, heart, brown-adipose, kidney
 
 # Determine if sites contain replicates
 # Ensure that the Replicates contain the same labelids
@@ -441,7 +438,7 @@ sample_join <- countdata_df %>%
     select(labelid) %>% unlist() %>% as.character() %>% sort()
     length(r1_v)
     length(r2_v)
-    print(all(r1_v == r2_v))
+    #print(all(r1_v == r2_v))
   }
 }
 ```
@@ -453,12 +450,11 @@ sample_join <- countdata_df %>%
 -Boxplots
 -Density plot
 -Summary Statistics
-```{r Boxplots and Density Plots to Measure Normalization}
 
-# Assign Variables
-################################################################################
+```{r Automation: Boxplots and Density Plots to Measure Normalization}
 tissue_study_institute_metab_families <- countdata_df %>%
   ungroup() %>%
+  filter(STUDY_INSTITUTE == 'Mayo Clinic') %>%
   unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
   unite(TISSUE,STUDY_INSTITUTE_METAB_FAMILY, col = TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>%
   select(TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>% unlist() %>% as.character() %>% unique()
@@ -468,15 +464,18 @@ tissue_study_institute_metab_families <- countdata_df %>%
 # tissue <- 'liver'
 # tissue_study_institute_metab_familiy <- tissue_study_institute_metab_families[1]
 for(tissue_study_institute_metab_family in tissue_study_institute_metab_families){
+  
   # Variables
+  tissue_study_institute_metab_family_out <- tissue_study_institute_metab_family %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-')
   tissue <- tissue_study_institute_metab_family %>% 
     str_split(pattern = '_') %>% unlist() %>% head(n=1)
-  study_institute_metab_family <- tissue_study_institute_metab_family %>%
+study_institute_metab_family <- tissue_study_institute_metab_family %>%
     str_remove(paste0(tissue,'_'))
-  named <- 'named'
+named <- 'named'
   
   # Collect the samples (remove QCs) & join sample order
-  sample_join <- countdata_df %>%
+sample_join <- countdata_df %>%
         ungroup() %>%
         unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
         filter(TISSUE == tissue) %>%
@@ -497,231 +496,19 @@ for(tissue_study_institute_metab_family in tissue_study_institute_metab_families
   filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
     select(viallabel) %>% unlist() %>% as.character() %>% unique() %>%
     str_sub(-3,-1) %>% unique()
-  # If the runs contain replicate samples, then proceed with the analysis
   if(length(reps) == 2){
-    # Print the number of replicates
-    print(paste0('Number of replicates in ',tissue,' ',study_institute_metab_family,': ', length(reps)))
-    print(paste0('Replicates in ',tissue,' ',study_institute_metab_family,': ', paste(reps, collapse = ' ')))
-
-    # Collect the metabolites unique to run
-    metabolites <- countdata_df %>%
-        ungroup() %>%
-        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-        filter(TISSUE == tissue) %>%
-        filter(NAMED == named) %>%
-        filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
-        unnest(METABOLITE_DATA) %>%
-        select(refmet_name) %>% unlist() %>% as.character() %>% unique()
-
-# Subset Data
-################################################################################
-
-# Collect abundances in long format and annotate replicate labelids
-plot_df <- countdata_df %>%
-        ungroup() %>%
-        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-        filter(TISSUE == tissue) %>%
-        filter(NAMED == named) %>%
-        filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
-        unnest(COUNT_DATA) %>%
-        filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-        left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
-        unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-        mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-                                     grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3]))
-
-# Plot Boxplots faceted by shared metabolites
-################################################################################
-p <- plot_df %>%
-  ggplot(aes(y = METABOLITE_NAME, x = VALUE, color = REPLICATE)) +
-  geom_boxplot(alpha = 0.8) +
-  labs(title=paste0(tissue,' ',study_institute_metab_family,": Original Metabolite Abundances"),
-             x = "Abundance", y = "") 
-plot(p)
-
-# Summary Statistics of Density plot distribution
-################################################################################
-# Iterate through the runs and collect vectors
-df_all <- data.frame()
-for(rep in c(reps)){
-  # Collect numeric vector
-  num_vec <- plot_df %>%
-    filter(REPLICATE == rep) %>%
-    select(VALUE) %>% unlist() %>% unname()
-  df <- NumericSummaryStats(num_vec)
-  row.names(df) <- rep
-  df_all <- rbind(df_all, df)
-}
-p <- df_all
-print(p)
-
-# Plot the density plot for all the gene counts
-################################################################################
-p <- plot_df %>%
-  ggplot(aes(x = VALUE, color = REPLICATE)) +
-  geom_density() +
-  xlim(min(df_all$MIN), mean(df_all$Q3)) +
-  labs(title=paste0(tissue,' ',study_institute_metab_family,": Original Metabolite Abundances"),
-       x = "Abundance",
-       y = "Density")
-plot(p)
-
-# Subset the data for sites to compare (scatterplots)
-###################################################
-plot_join_df <- countdata_df %>%
-  ungroup() %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
-  unnest(COUNT_DATA) %>%
-  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-  unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-  mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-                              grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-                              )) %>%
-  select(REPLICATE,METABOLITE_NAME,labelid,VALUE) %>%
-  mutate(REPLICATE = as.character(REPLICATE)) %>%
-  split(.$REPLICATE) %>%
-  map(~rename(., !!sym(unique(.$REPLICATE)) := "VALUE")) %>%
-  map(~select(., -REPLICATE)) %>%
-  purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
-
-# Normalize
-# Note in this step, we use labelid to account for mayo's duplicate samples
-################################################################################
-norm_df <- plot_df %>%
-  unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-  split(.$REPLICATE) %>%
-  map(select, labelid_viallabel, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(column_to_rownames, var = "labelid_viallabel") %>%
-  map(as.matrix) %>%
-  map(AutoScaleMatrix) %>%
-  map(as.data.frame) %>%
-  map(rownames_to_column, var = "labelid_viallabel") %>%
-  map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(metabolites)) %>%
-  map(mutate, REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-                                    grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
-  bind_rows()
-
-# Plot Boxplots faceted by shared metabolites
-################################################################################
-p <- norm_df %>%
-  ggplot(aes(y = METABOLITE_NAME, x = VALUE, color = REPLICATE)) +
-  geom_boxplot(alpha = 0.8) +
-  labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances"),
-             x = "Abundance", y = "") 
-print(p)
-# Normalize
-# Subset the data for sites to compare (scatterplots)
-###################################################
-norm_join_df <- countdata_df %>%
-  ungroup() %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
-  unnest(COUNT_DATA) %>%
-  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-  unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-  mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-                               grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
-  split(.$REPLICATE) %>%
-  map(select, labelid_viallabel, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(column_to_rownames, var = "labelid_viallabel") %>%
-  map(as.matrix) %>%
-  map(AutoScaleMatrix) %>%
-  map(as.data.frame) %>%
-  map(rownames_to_column, var = "labelid_viallabel") %>%
-  map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(metabolites)) %>%
-  map(mutate, REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-                                    grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
-  map(~rename(., !!sym(unique(.$REPLICATE)) := "VALUE")) %>%
-  map(~select(., -REPLICATE)) %>%
-  map(mutate, labelid = gsub(pattern = "_..*", replacement = '', labelid_viallabel)) %>%
-  map(select, -labelid_viallabel) %>%
-  purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
-
-# Plot scatter plots
-################################################################################
-p <- norm_join_df %>%
-  ggplot(aes(x = !!sym(reps[1]), y = !!sym(reps[2])), color = ) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", size = 1) +
-  geom_abline(linetype="dashed") +
-  facet_wrap(~ METABOLITE_NAME) +
-  expand_limits(x = 0, y = 0) +
-  labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances")) +
-  coord_fixed(ratio=1)
-plot(p)
-
-# Plot scatter plots ordered by sample (include R2 values)
-lm_df <- norm_join_df %>%
-  rename(name = METABOLITE_NAME) %>%
-  rename(x = reps[1]) %>%
-  rename(y = reps[2])
-# Iterate through each of the shared metabolites to collect summary info about their correlations
-r2_df <- data.frame()
-for(metab in metabolites){
-  met_df <- lm_df %>%
-    filter(name == metab)
-  r2_df <- rbind(r2_df, lm_eqn(met_df))
-}
-
-
-
-# Display summaries
-p <- r2_df %>%
-  arrange(METABOLITE)
-print(p)
-p <- r2_df %>%
-  arrange(desc(R2)) %>%
-  select(METABOLITE,R2)
-print(p)
-
-# Plot the density plot for all the gene counts
-################################################################################
-p <- norm_df %>%
-  ggplot(aes(x = VALUE, color = REPLICATE)) +
-  geom_density() +
-  labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances"),
-       x = "Abundance",
-       y = "Density")
-plot(p)
-# Summary Statistics of Density plot distribution
-################################################################################
-# Iterate through the runs and collect vectors
-df_all <- data.frame()
-for(rep in reps){
-  # Collect numeric vector
-  num_vec <- norm_df %>%
-    filter(REPLICATE == rep) %>%
-    select(VALUE) %>% unlist() %>% unname()
-  df <- NumericSummaryStats(num_vec)
-  row.names(df) <- rep
-  df_all <- rbind(df_all, df)
-}
-p <- df_all
-print(p)
-}
-
-}
+  rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201012_pass1a-metabolomics-mayo-reps-2_steep.Rmd',
+    output_format = "github_document",
+    output_file = paste0("20201012_replicate-analysis-",tissue_study_institute_metab_family_out,'_steep.md'),
+    output_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/mayo_clinic')
+}}
 
 ```
+
 
 # Inference:
 -It seems there are differences in metabolite meaures (measured by correlation and plotting) between the different replicates. We should consider why these samples were replicated.
 
-# #### Sesh:
-```{r Sesh}
-session_info()
-```
 
 
 

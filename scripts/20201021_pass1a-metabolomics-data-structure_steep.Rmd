@@ -2,7 +2,12 @@
 title: "20201021_pass1a-metabolomics-data-structure_steep"
 author: "Steep"
 date: "10/21/2020"
-output: html_document
+always_allow_html: true
+output: 
+  github_document:
+    toc: true
+    #code_folding: hide
+    #highlight: zenburn
 ---
 
 
