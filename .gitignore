@@ -2,3 +2,4 @@ data
 docs
 plots
 scripts/.Rhistory
+reports/*/*.html
