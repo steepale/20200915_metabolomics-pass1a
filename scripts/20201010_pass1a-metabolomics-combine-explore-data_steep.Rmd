@@ -1,0 +1,658 @@
+---
+title: "PASS1A (Rat) Metabolomics: Combine and Explore Data Sets"
+author: "Steep"
+date: "10/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## Goals of Analysis
+
+
+## Setup the Environment
+```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE}
+################################################################################
+##### Resources and Dependencies ###############################################
+################################################################################
+
+# Set the working directory
+#############################################################################
+COMP <- "MacBook" 
+#COMP <- "GreatLakes"       
+if(COMP == "MacBook"){
+        # MacBook
+        WD <- '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a'    
+}else if(COMP == "GreatLakes"){
+        # MichMed
+        WD <- '/home/acsteep/motrpac/20200915_metabolomics-pass1a'
+}
+
+#setwd(WD)
+
+# Load the dependencies
+#source("https://bioconductor.org/biocLite.R")
+#BiocManager::install("org.Rn.eg.db")
+#install.packages("tidyverse")
+
+# Load dependencies
+pacs...man <- c("tidyverse", "data.table","rlang")
+lapply(pacs...man, FUN = function(X) {
+        do.call("library", list(X)) })
+
+############################################################
+##### Functions ############################################
+############################################################
+
+# Name functions
+select <- dplyr::select
+counts <- DESeq2::counts
+map <- purrr::map
+mutate <- dplyr::mutate
+
+# Global options
+options(dplyr.print_max = 100)
+
+# Source the functions
+source(paste0(WD,'/functions/not_in.R'))
+source(paste0(WD,'/functions/rat_mouse_ortho.R'))
+source(paste0(WD,'/functions/mouse2rat_ortho.R'))
+source(paste0(WD,'/functions/lmp.R'))
+source(paste0(WD,'/functions/cor_PC_1_6.R'))
+source(paste0(WD,'/functions/elbow_finder.R'))
+source(paste0(WD,'/functions/cor_outlier2.R'))
+source(paste0(WD,'/functions/CenterMatrix.R'))
+source(paste0(WD,'/functions/AutoScaleMatrix.R'))
+source(paste0(WD,'/functions/RangeScaleMatrix.R'))
+source(paste0(WD,'/functions/ParetoScaleMatrix.R'))
+source(paste0(WD,'/functions/VastScaleMatrix.R'))
+source(paste0(WD,'/functions/LevelScaleMatrix.R'))
+source(paste0(WD,'/functions/Log10Matrix.R'))
+source(paste0(WD,'/functions/PowerMatrix.R'))
+```
+
+# Load & Incorporate the Phenotype Data
+```{r Incorporate Phenotype Data}
+# Load the phenotype data
+pheno_file <- paste0(WD,"/data/phenotype/motrpac_pass1a-06_pheno_viallabel-data.txt")
+pheno_df <- read.csv(file = pheno_file, header = T, sep = '\t', fill = T)
+# Adjust the names of the phenofile
+# Load the name dictionary
+pheno_dict_file <- paste0(WD,"/data/phenotype/motrpac_pass1a_pheno_merged-dictionary.txt")
+pheno_dict_df <- read.csv(file = pheno_dict_file, header = T, sep = '\t', fill = T)
+pheno_dict_df <- pheno_dict_df %>% select(BICUniqueID, FullName)
+# Rename
+for(i in 1:nrow(pheno_dict_df)){
+        bic_name <- pheno_dict_df[i,'BICUniqueID'] %>% as.character()
+        full_name <- pheno_dict_df[i,'FullName'] %>% as.character()
+        n <- which(names(pheno_df) == bic_name)
+        names(pheno_df)[n] <- full_name
+}
+
+# Set a vector for Exercise/Control Levels and Colors
+ec_levels <- c('Exercise - IPE',
+               'Exercise - 0.5 hr',
+               'Exercise - 1 hr',
+               'Exercise - 4 hr',
+               'Exercise - 7 hr',
+               'Exercise - 24 hr',
+               'Exercise - 48 hr',
+               'Control - IPE',
+               'Control - 7 hr')
+ec_colors <- c('gold',
+               'darkgoldenrod1',
+               'orange',
+               'darkorange',
+               'darkorange2',
+               'darkorange3',
+               'darkorange4',
+               'steelblue1',
+               'steelblue4')
+
+# Reorient datatypes
+pheno_df$pid <- as.factor(pheno_df$pid)
+pheno_df$bid <- as.factor(pheno_df$bid)
+pheno_df$labelid <- as.factor(pheno_df$labelid)
+pheno_df$viallabel <- as.factor(pheno_df$viallabel)
+pheno_df$Key.anirandgroup <- factor(pheno_df$Key.anirandgroup,
+                                       levels = ec_levels)
+
+# Save the phenotype object
+pheno_obj <- paste0(WD,"/data/20201021_pass1a-06-pheno-viallabel_steep.rds")
+#saveRDS(pheno_df, pheno_obj)
+
+pheno_df
+```
+
+
+# Create a metadata matrix from metabolomics data files
+```{r Create Metabolomics Metadata Table, warning = FALSE}
+# Function creates a metadata table from the directory tree of metabolomics data realese 2.0
+data_dir <- paste0(WD,"/data")
+DATASET <- "targeted"
+t_dir <- "t55-gastrocnemius"
+tech_dir <- "metab-t-amines"
+NAMED <- "named"
+metadata_df <- data.frame()
+countdata_df <- data.frame()
+sampledata_df <- data.frame()
+metabolitedata_df <- data.frame()
+OME <- "metabolomics"
+# Collect targeted metabolites
+for(DATASET in c('targeted','untargeted')){
+        # Update data directory
+        if(DATASET == 'untargeted'){
+                tissue_dir <- paste0(data_dir,'/metabolomics-untargeted')
+        }else if(DATASET == 'targeted'){
+                tissue_dir <- paste0(data_dir,'/metabolomics-targeted')
+        }
+        
+        # List of tissues
+        ls <- system(paste0('ls -1 ',tissue_dir), intern = T) %>% as.vector()
+        tissue_dirs <- ls[grepl("t[0-9][0-9]", ls)]
+        
+        # Iterate through the tissues
+        for(t_dir in tissue_dirs){
+                # Collect Tissue
+                TISSUE <- (str_split(t_dir, pattern = "t[0-9]+-") %>% unlist())[2]
+                print(TISSUE)
+                # Collect list of technologies
+                t_dir <- paste0(tissue_dir,'/',t_dir) 
+                tech_dirs <- system(paste0('ls -1 ',t_dir), intern = T) %>% as.vector()
+                for(tech_dir in tech_dirs){
+                        # Collect the METAB_FAMILY
+                        if(DATASET == 'untargeted'){
+                                METAB_FAMILY <- (str_split(tech_dir, pattern = "-u-") %>% unlist())[2]
+                                names <- c('named', 'unnamed')
+                        }else if(DATASET == 'targeted'){
+                                METAB_FAMILY <- ((str_split(tech_dir, pattern = "-t-") %>%
+                                                         unlist())[2] %>% 
+                                        str_split(pattern = "-") %>% unlist())[1]
+                                names <- c('named')
+                        }
+                        tech_dir <- paste0(t_dir,'/',tech_dir)
+                        # Collect variables for named and unnamed compounds
+                        for(NAMED in names){
+                                # Experimental Details
+                                ################################################
+                                exp_file <- paste0(tech_dir,'/*_',
+                                                   NAMED,'-experimentalDetails.txt')
+                                # Collect variables
+                                STUDY_TITLE<- system(paste0('grep -w "ST:STUDY_TITLE" ',
+                                                            exp_file), intern = T) %>%
+                                                str_remove("ST:STUDY_TITLE\\s+") %>% 
+                                        str_remove("\\r")
+                                STUDY_TYPE<- system(paste0('grep -w "ST:STUDY_TYPE" ',
+                                                            exp_file), intern = T) %>%
+                                                str_remove("ST:STUDY_TYPE\\s+") %>% str_remove("\\r")
+                                STUDY_SUMMARY <- 
+                                        system(paste0('grep -w "ST:STUDY_SUMMARY" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:STUDY_SUMMARY\\s+") %>% 
+                                        str_remove("\\r") %>% paste(collapse = ' ')
+                                STUDY_INSTITUTE<- system(paste0('grep -w "ST:INSTITUTE" ',
+                                                            exp_file), intern = T) %>%
+                                                str_remove("ST:INSTITUTE\\s+") %>% str_remove("\\r")
+                                STUDY_DEPARTMENT <- system(paste0('grep -w "ST:DEPARTMENT" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:DEPARTMENT\\s+") %>%
+                                        str_remove("\\r") 
+                                STUDY_LABORATORY <- system(paste0('grep -w "ST:LABORATORY" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:LABORATORY\\s+") %>%
+                                        str_remove("\\r") 
+                                STUDY_LAST_NAME <-
+                                        system(paste0('grep -w "ST:LAST_NAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:LAST_NAME\\s+") %>%
+                                        str_remove("\\r") 
+                                ST_NUM_GROUPS <-
+                                        system(paste0('grep -w "ST:NUM_GROUPS" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:NUM_GROUPS\\s+") %>%
+                                        str_remove("\\r") 
+                                SUBMIT_DATE <-
+                                        system(paste0('grep -w "ST:SUBMIT_DATE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:SUBMIT_DATE\\s+") %>%
+                                        str_remove("\\r") 
+                                STUDY_COMMENTS <- 
+                                        system(paste0('grep -w "ST:STUDY_COMMENTS" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("ST:STUDY_COMMENTS\\s+") %>%
+                                        str_remove("\\r") %>% paste(collapse = ' ')
+                                SUBJECT_TYPE <- 
+                                        system(paste0('grep -w "SU:SUBJECT_TYPE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("SU:SUBJECT_TYPE\\s+") %>%
+                                        str_remove("\\r") 
+                                SUBJECT_SPECIES <- 
+                                        system(paste0('grep -w "SU:SUBJECT_SPECIES" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("SU:SUBJECT_SPECIES\\s+") %>%
+                                        str_remove("\\r")
+                                SAMPLEPREP_SUMMARY <- 
+                                        system(paste0('grep -w "SP:SAMPLEPREP_SUMMARY" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("SP:SAMPLEPREP_SUMMARY\\s+") %>%
+                                        str_remove("\\r") %>% 
+                                        paste(collapse = ' ')
+                                SAMPLEPREP_PROTOCOL_FILENAME <- 
+                                        system(paste0('grep -w "SP:SAMPLEPREP_PROTOCOL_FILENAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("SP:SAMPLEPREP_PROTOCOL_FILENAME\\s+") %>%
+                                        str_remove("\\r") 
+                                CH_CHROMATOGRAPHY_TYPE <- 
+                                        system(paste0('grep -w "CH:CHROMATOGRAPHY_TYPE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("CH:CHROMATOGRAPHY_TYPE\\s+") %>%
+                                        str_remove("\\r") 
+                                CH_INSTRUMENT_NAME <- 
+                                        system(paste0('grep -w "CH:INSTRUMENT_NAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("CH:INSTRUMENT_NAME\\s+") %>%
+                                        str_remove("\\r") 
+                                CH_COLUMN_NAME <- 
+                                        system(paste0('grep -w "CH:COLUMN_NAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("CH:COLUMN_NAME\\s+") %>%
+                                        str_remove("\\r") 
+                                CH_METHODS_FILENAME <- 
+                                        system(paste0('grep -w "CH:METHODS_FILENAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("CH:METHODS_FILENAME\\s+") %>%
+                                        str_remove("\\r") 
+                                CH_SUMMARY <- 
+                                        system(paste0('grep -w "CH:CHROMATOGRAPHY_SUMMARY" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("CH:CHROMATOGRAPHY_SUMMARY\\s+") %>%
+                                        str_remove("\\r") %>% 
+                                        paste(collapse = ' ')
+                                MS_INSTRUMENT_TYPE <- 
+                                        system(paste0('grep -w "MS:INSTRUMENT_TYPE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:INSTRUMENT_TYPE\\s+") %>%
+                                        str_remove("\\r") 
+                                MS_INSTRUMENT_NAME <- 
+                                        system(paste0('grep -w "MS:INSTRUMENT_NAME" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:INSTRUMENT_NAME\\s+") %>%
+                                        str_remove("\\r") 
+                                MS_TYPE <- 
+                                        system(paste0('grep -w "MS:MS_TYPE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:MS_TYPE\\s+") %>%
+                                        str_remove("\\r") 
+                                MS_ION_MODE <- 
+                                        system(paste0('grep -w "MS:ION_MODE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:ION_MODE\\s+") %>%
+                                        str_remove("\\r") 
+                                MS_UNITS <- 
+                                        system(paste0('grep -w "MS_METABOLITE_DATA:UNITS" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS_METABOLITE_DATA:UNITS\\s+") %>%
+                                        str_remove("MS_METABOLITE_DATA:UNITS:\\s+") %>%
+                                        str_remove("MS_METABOLITE_DATA:UNITS\\t") %>%
+                                        str_remove("MS_METABOLITE_DATA:UNITS:\\t") %>%
+                                        str_remove("\\r") 
+                                MS_COMMENTS <- 
+                                        system(paste0('grep -w "MS:MS_COMMENTS" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:MS_COMMENTS\\s+") %>%
+                                        str_remove("\\r") %>% 
+                                        paste(collapse = ' ')
+                                MS_RESULTS_FILE <- 
+                                        system(paste0('grep -w "MS:MS_RESULTS_FILE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("MS:MS_RESULTS_FILE\\s+") %>%
+                                        str_remove("\\r") 
+                                ANALYSIS_TYPE <- 
+                                        system(paste0('grep -w "AN:ANALYSIS_TYPE" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("AN:ANALYSIS_TYPE\\s+") %>%
+                                        str_remove("\\r") 
+                                ANALYSIS_DETAILS <- 
+                                        system(paste0('grep -w "AN:ANALYSIS_DETAILS" ',
+                                        exp_file), intern = T) %>%
+                                        str_remove("AN:ANALYSIS_DETAILS\\s+") %>%
+                                        str_remove("AN:ANALYSIS_DETAILS:\t+") %>%
+                                        str_remove("\\r") %>% 
+                                        paste(collapse = ' ')
+                                
+                                # Metabolite Metadata
+                                ################################################
+                                metab_meta_file <- paste0(tech_dir,'/*_',
+                                                   NAMED,'-metadata-metabolites.txt')
+                                metab_meta_file <- system(paste0('ls ',metab_meta_file), intern = T)
+                                # Load the file
+                                metab_meta_data <- read.csv(file = metab_meta_file, sep = '\t', 
+                                           header = T, fill = T)
+                                METABOLITE_NAMES <- metab_meta_data %>%
+                                        select(metabolite_name) %>% unlist() %>% 
+                                        unname() %>% paste(collapse = ';')
+                                METABOLITE_N <- metab_meta_data %>%
+                                        select(metabolite_name) %>% unlist() %>%
+                                        length()
+                                
+                                #TODO: Create an annotation column for internal standard N
+                                
+                                # Sample Metadata
+                                ################################################
+                                sample_meta_file <- paste0(tech_dir,'/*_',
+                                                   NAMED,'-metadata-samples.txt')
+                                sample_meta_file <- system(paste0('ls ',sample_meta_file), intern = T)
+                                # Load the file
+                                sample_meta_data <- read.csv(file = sample_meta_file, 
+                                        sep = '\t' , header = T) %>% arrange(sample_order)
+                                sample_meta_data$sample_id <- as.character(sample_meta_data$sample_id)
+                                sample_meta_data$sample_type <- as.character(sample_meta_data$sample_type)
+                                SAMPLE_NAMES <- sample_meta_data %>%
+                                        select(sample_id) %>% unlist() %>% 
+                                        unname() %>% paste(collapse = ';')
+                                SAMPLE_N <- sample_meta_data %>%
+                                        filter(sample_type == 'Sample') %>%
+                                        nrow()
+                                QC_IS_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-InternalStandard') %>%
+                                        nrow()
+                                QC_PRERUN_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-PreRun') %>%
+                                        nrow()
+                                QC_BLANK_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-Blank') %>%
+                                        nrow()
+                                QC_POOLED_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-Pooled') %>%
+                                        nrow()
+                                QC_REFERENCE_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-Reference') %>%
+                                        nrow()
+                                QC_DRIFT_N <- sample_meta_data %>%
+                                        filter(sample_type == 'QC-DriftCorrection') %>%
+                                        nrow()
+                                
+                                # Collect the counts and append with annotation
+                                ################################################
+                                # Locate the file
+                                count_file <- paste0(tech_dir,'/*_',
+                                                   NAMED,'-results.txt')
+                                count_file <- system(paste0('ls ',count_file), intern = T)
+                                # Load the file
+                                count_df <- read.csv(file = count_file, sep = '\t' , 
+                                           header = T, check.names = F)
+                                names(count_df) <- make.unique(names(count_df))
+                                
+                                # Convert the metabolite names to refmet names
+                                if(NAMED == 'named'){
+                                metab_meta_names <- metab_meta_data %>% 
+                                        select(metabolite_name, refmet_name)
+                                count_df <- left_join(count_df, metab_meta_names, 
+                                                      by = c('metabolite_name')) %>%
+                                        select(-metabolite_name) %>%
+                                        select(refmet_name, everything())
+                                names(count_df)[1] <- 'metabolite_name'
+                                }
+                                # Gather the dataframe by samples
+                                gather_names <- 
+                                        names(count_df)[names(count_df)!='metabolite_name']
+                                
+                                # Transform Counts with Different Strategies
+                                ################################################
+                                # Dataframe to matrix
+                                count_df <- count_df[!duplicated(count_df$metabolite_name),]
+                                row.names(count_df) <- count_df$metabolite_name %>% as.character()
+                                count_mat <- count_df %>%
+                                        select(-metabolite_name) %>%
+                                        as.matrix() %>% t()
+                                
+                                # Add Sample Annotation to the Count Data
+                                pheno_join <- pheno_df %>% select(pid,bid,labelid,viallabel)
+                                pheno_join$pid <- as.character(pheno_join$pid)
+                                pheno_join$bid <- as.character(pheno_join$bid)
+                                pheno_join$labelid <- as.character(pheno_join$labelid)
+                                pheno_join$viallabel <- as.character(pheno_join$viallabel)
+                                
+                                # Original Abundances
+                                ################################
+                                count_org <- count_mat %>%
+                                        t() %>% as.data.frame() %>%
+                                        tibble::rownames_to_column(var = "METABOLITE_NAME") %>%
+                                        tidyr::gather(all_of(gather_names), 
+                                        key = "viallabel", value = "VALUE") %>%
+                                        left_join(y = pheno_join, by = c('viallabel')) %>%
+                                        select(METABOLITE_NAME, labelid, 
+                                               viallabel, pid, bid, VALUE) %>%
+                                        mutate(JOIN_KEY='123') %>%
+                                        group_by(JOIN_KEY) %>%
+                                        nest(COUNT_DATA = -JOIN_KEY) %>%
+                                        ungroup()
+                                
+                                # Deal with missing variables
+                                ################################################
+                                # If Variables were not collected, make them NA
+                                vects <- list(OME,DATASET,TISSUE,METAB_FAMILY,NAMED,
+                                STUDY_INSTITUTE,STUDY_TITLE,STUDY_TYPE,STUDY_SUMMARY,
+                                STUDY_DEPARTMENT,STUDY_LABORATORY,STUDY_LAST_NAME,
+                                ST_NUM_GROUPS,SUBMIT_DATE,STUDY_COMMENTS,
+                                SUBJECT_TYPE,SUBJECT_SPECIES,SAMPLEPREP_SUMMARY,
+                                SAMPLEPREP_PROTOCOL_FILENAME,CH_CHROMATOGRAPHY_TYPE,
+                                CH_INSTRUMENT_NAME,CH_COLUMN_NAME,CH_METHODS_FILENAME,
+                                CH_SUMMARY,MS_INSTRUMENT_TYPE,MS_INSTRUMENT_NAME,MS_TYPE,
+                                MS_ION_MODE,MS_UNITS,MS_COMMENTS,MS_RESULTS_FILE,ANALYSIS_TYPE,
+                                ANALYSIS_DETAILS,METABOLITE_NAMES,METABOLITE_N,SAMPLE_NAMES, SAMPLE_N,
+                                QC_IS_N,QC_PRERUN_N,QC_BLANK_N,QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N)
+                                
+                                names(vects) <- c("OME","DATASET","TISSUE","METAB_FAMILY",
+                                "NAMED","STUDY_INSTITUTE","STUDY_TITLE","STUDY_TYPE","STUDY_SUMMARY",
+                                "STUDY_DEPARTMENT","STUDY_LABORATORY","STUDY_LAST_NAME",
+                                "ST_NUM_GROUPS","SUBMIT_DATE","STUDY_COMMENTS","SUBJECT_TYPE",
+                                "SUBJECT_SPECIES","SAMPLEPREP_SUMMARY","SAMPLEPREP_PROTOCOL_FILENAME",
+                                "CH_CHROMATOGRAPHY_TYPE","CH_INSTRUMENT_NAME","CH_COLUMN_NAME",
+                                "CH_METHODS_FILENAME","CH_SUMMARY","MS_INSTRUMENT_TYPE",
+                                "MS_INSTRUMENT_NAME","MS_TYPE","MS_ION_MODE","MS_UNITS",
+                                "MS_COMMENTS","MS_RESULTS_FILE","ANALYSIS_TYPE",
+                                "ANALYSIS_DETAILS","METABOLITE_NAMES","METABOLITE_N",
+                                "SAMPLE_NAMES","SAMPLE_N","QC_IS_N","QC_PRERUN_N","QC_BLANK_N",
+                                "QC_POOLED_N","QC_REFERENCE_N","QC_DRIFT_N")
+                                for(i in 1:length(vects)){
+                                        if(length(vects[[i]]) == 0){
+                                                x <- names(vects)[i]
+                                                assign(x, NA)
+                                        }
+                                }
+                                
+                                # Create the Nested Sample Data
+                                ################################################
+                                # # Add the annotation
+                                sample_meta_data$DATASET <- DATASET
+                                sample_meta_data$TISSUE <- TISSUE
+                                sample_meta_data$METAB_FAMILY <- METAB_FAMILY
+                                sample_meta_data$NAMED <- NAMED
+                                sample_meta_data$STUDY_INSTITUTE <- STUDY_INSTITUTE
+                                sample_meta_data$CH_CHROMATOGRAPHY_TYPE <- CH_CHROMATOGRAPHY_TYPE
+                                sample_meta_data$MS_TYPE <- MS_TYPE
+                                sample_meta_data$MS_ION_MODE <- MS_ION_MODE
+                                # Nest sample data in with metadata
+                                sample_df <- sample_meta_data %>% 
+                                        group_by(DATASET,TISSUE,METAB_FAMILY,NAMED,
+                                               STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,
+                                               MS_TYPE,MS_ION_MODE) %>%
+                                        nest(.key = "SAMPLE_DATA") %>%
+                                        ungroup()
+                                sampledata_df <- rbind(sampledata_df, sample_df)
+                                
+                                # Create the Nested Metabolite Data
+                                ################################################
+                                # # Add the annotation
+                                metab_meta_data$DATASET <- DATASET
+                                metab_meta_data$TISSUE <- TISSUE
+                                metab_meta_data$METAB_FAMILY <- METAB_FAMILY
+                                metab_meta_data$NAMED <- NAMED
+                                metab_meta_data$STUDY_INSTITUTE <- STUDY_INSTITUTE
+                                metab_meta_data$CH_CHROMATOGRAPHY_TYPE <- CH_CHROMATOGRAPHY_TYPE
+                                metab_meta_data$MS_TYPE <- MS_TYPE
+                                metab_meta_data$MS_ION_MODE <- MS_ION_MODE
+                                # Nest sample data in with metadata
+                                metabolite_df <- metab_meta_data %>% 
+                                        group_by(DATASET,TISSUE,METAB_FAMILY,NAMED,
+                                               STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,
+                                               MS_TYPE,MS_ION_MODE) %>%
+                                        nest(.key = "METABOLITE_DATA") %>%
+                                        ungroup()
+                                metabolitedata_df <- rbind(metabolitedata_df, metabolite_df)
+                                
+                                # Create the Nested CountData
+                                ################################################
+                                # # Add the annotation
+                                # Merge the countdata
+                                # Nest count data in with metadata
+                                # Join the dataframes and nest
+                                count_df <- data.frame(DATASET=DATASET, TISSUE=TISSUE,
+                                        METAB_FAMILY=METAB_FAMILY, NAMED=NAMED,
+                                        STUDY_INSTITUTE=STUDY_INSTITUTE,
+                                        CH_CHROMATOGRAPHY_TYPE=CH_CHROMATOGRAPHY_TYPE,
+                                        MS_TYPE=MS_TYPE,MS_ION_MODE=MS_ION_MODE,
+                                        JOIN_KEY='123') %>%
+                                        left_join(y = count_org, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_as, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_rs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_ps, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_vs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_ls, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_lc, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_las, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_lrs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_lps, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_lvs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_lls, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_pc, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_pas, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_prs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_pps, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_pvs, by =c('JOIN_KEY')) %>%
+                                        # left_join(y = count_pls, by =c('JOIN_KEY')) %>%
+                                        select(-JOIN_KEY)
+                                
+                                countdata_df <- rbind(countdata_df, count_df)
+                                
+                                # Merge the MetaData
+                                ################################################
+                                int_df <- data.frame(OME,DATASET,TISSUE,METAB_FAMILY,NAMED,
+                                STUDY_INSTITUTE,STUDY_TITLE,STUDY_TYPE,STUDY_SUMMARY,
+                                STUDY_DEPARTMENT,STUDY_LABORATORY,STUDY_LAST_NAME,
+                                ST_NUM_GROUPS,SUBMIT_DATE,STUDY_COMMENTS,
+                                SUBJECT_TYPE,SUBJECT_SPECIES,SAMPLEPREP_SUMMARY,
+                                SAMPLEPREP_PROTOCOL_FILENAME,CH_CHROMATOGRAPHY_TYPE,
+                                CH_INSTRUMENT_NAME,CH_COLUMN_NAME,CH_METHODS_FILENAME,
+                                CH_SUMMARY,
+                                MS_INSTRUMENT_TYPE,MS_INSTRUMENT_NAME,MS_TYPE,MS_ION_MODE,
+                                MS_UNITS,
+                                MS_COMMENTS,MS_RESULTS_FILE,ANALYSIS_TYPE,ANALYSIS_DETAILS,
+                                METABOLITE_NAMES,METABOLITE_N,SAMPLE_NAMES,SAMPLE_N,
+                                QC_IS_N,QC_PRERUN_N,QC_BLANK_N,QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N)
+                                metadata_df <- rbind(metadata_df, int_df)
+                                
+                                # Reassign all variables to NA or empty
+                                ################################################
+                                resets <- vects[names(vects) %!in% 
+                                                        c('OME','DATASET','TISSUE','METAB_FAMILY',
+                                                          'NAMED')]
+                                for(i in 1:length(resets)){
+                                        x <- names(resets)[i]
+                                        assign(x, NA)
+                                }
+                                count_df <- data.frame()
+                                sample_df <- data.frame()
+                                metabolite_df <- data.frame()
+                        }
+                        
+                }
+        }
+}  
+
+# Join the nested count data, sample data, and metabolite data
+##############################################################################
+countdata_df <- left_join(countdata_df, sampledata_df, by = c("DATASET","TISSUE","METAB_FAMILY","NAMED",
+                                               "STUDY_INSTITUTE","CH_CHROMATOGRAPHY_TYPE",
+                                               "MS_TYPE","MS_ION_MODE"))
+countdata_df <- left_join(countdata_df, metabolitedata_df, by = c("DATASET","TISSUE","METAB_FAMILY",
+                                                "NAMED","STUDY_INSTITUTE","CH_CHROMATOGRAPHY_TYPE",
+                                                "MS_TYPE","MS_ION_MODE"))
+
+# Make custom edits to "Key" columns
+##############################################################################
+# Metadata
+##############
+metadata_df <- metadata_df %>%
+         mutate(CH_CHROMATOGRAPHY_TYPE = case_when(
+                CH_CHROMATOGRAPHY_TYPE == "GC" ~ "GC",
+                CH_CHROMATOGRAPHY_TYPE == "gas phase" ~ "GC",
+                CH_CHROMATOGRAPHY_TYPE == "Rerverse phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "RP" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "Reverse phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "Reversed phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "flow injection" ~ "FIC",
+                CH_CHROMATOGRAPHY_TYPE == "HILIC" ~ "HILIC"))
+metadata_df <- metadata_df %>%
+         mutate(MS_ION_MODE = case_when(
+                MS_ION_MODE == "negative" ~ "negative",
+                MS_ION_MODE == "Negative" ~ "negative",
+                MS_ION_MODE == "NEGATIVE" ~ "negative",
+                MS_ION_MODE == "positive" ~ "positive",
+                MS_ION_MODE == "Positive" ~ "positive",
+                MS_ION_MODE == "POSITIVE" ~ "positive"))
+metadata_df <- metadata_df %>%
+         mutate(MS_ION_MODE = ifelse(METAB_FAMILY == "rppos", "positive", MS_ION_MODE))
+
+# Count Data
+##############
+countdata_df <- countdata_df %>%
+         mutate(CH_CHROMATOGRAPHY_TYPE = case_when(
+                CH_CHROMATOGRAPHY_TYPE == "GC" ~ "GC",
+                CH_CHROMATOGRAPHY_TYPE == "gas phase" ~ "GC",
+                CH_CHROMATOGRAPHY_TYPE == "Rerverse phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "RP" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "Reverse phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "Reversed phase" ~ "RPC",
+                CH_CHROMATOGRAPHY_TYPE == "flow injection" ~ "FIC",
+                CH_CHROMATOGRAPHY_TYPE == "HILIC" ~ "HILIC"))
+countdata_df <- countdata_df %>%
+         mutate(MS_ION_MODE = case_when(
+                MS_ION_MODE == "negative" ~ "negative",
+                MS_ION_MODE == "Negative" ~ "negative",
+                MS_ION_MODE == "NEGATIVE" ~ "negative",
+                MS_ION_MODE == "positive" ~ "positive",
+                MS_ION_MODE == "Positive" ~ "positive",
+                MS_ION_MODE == "POSITIVE" ~ "positive"))
+countdata_df <- countdata_df %>%
+         mutate(MS_ION_MODE = ifelse(METAB_FAMILY == "rppos", "positive", MS_ION_MODE))
+
+# Save objects and files
+################################################################################
+
+# Write the Metadata table to a file and an object
+metadata_file <- paste0(WD, '/data/20201010_pass1a-metabolomics-metadata-table_steep.txt')
+write.table(metadata_df, file = metadata_file, quote = F, sep = '\t', row.names = F)
+
+metadata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-metadata-table_steep.rds')
+saveRDS(metadata_df, file = metadata_rds)
+
+# Write the Count data to a file and an object
+countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested_steep.rds')
+saveRDS(countdata_df, file = countdata_rds)
+
+```
+
+# #### Sesh:
+```{r Sesh}
+session_info()
+```
+
+
+

@@ -1,0 +1,526 @@
+---
+title: "20201029_pass1a-metabolomics-targeted-cross-tissue_steep"
+author: "Steep"
+date: "10/29/2020"
+always_allow_html: true
+output: 
+  github_document:
+    toc: true
+    #code_folding: hide
+    #highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## Goals of Analysis
+-Visualize the Data Structure of Metabolomics Data
+
+## Setup the Environment
+```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE}
+################################################################################
+##### Resources and Dependencies ###############################################
+################################################################################
+
+# Set the working directory
+#############################################################################
+COMP <- "MacBook" 
+#COMP <- "GreatLakes"       
+if(COMP == "MacBook"){
+        # MacBook
+        WD <- '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a'    
+}else if(COMP == "GreatLakes"){
+        # MichMed
+        WD <- '/home/acsteep/motrpac/20200915_metabolomics-pass1a'
+}
+
+#setwd(WD)
+
+# Load the dependencies
+#source("https://bioconductor.org/biocLite.R")
+#BiocManager::install("org.Rn.eg.db")
+#install.packages("kableExtra")
+
+# Load dependencies
+pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","sfsmisc",
+                "pheatmap","caret","ggforce","RANN","kableExtra")
+lapply(pacs...man, FUN = function(X) {
+        do.call("library", list(X)) })
+
+############################################################
+##### Functions ############################################
+############################################################
+
+# Name functions
+select <- dplyr::select
+counts <- DESeq2::counts
+map <- purrr::map
+desc <- dplyr::desc
+arrange <- dplyr::arrange
+melt <- reshape2::melt
+
+# Global options
+options(dplyr.print_max = 100)
+options(scipen=10000)
+
+# Source the functions
+source(paste0(WD,'/functions/not_in.R'))
+source(paste0(WD,'/functions/rat_mouse_ortho.R'))
+source(paste0(WD,'/functions/mouse2rat_ortho.R'))
+source(paste0(WD,'/functions/lmp.R'))
+source(paste0(WD,'/functions/cor_PC_1_6.R'))
+source(paste0(WD,'/functions/elbow_finder.R'))
+source(paste0(WD,'/functions/cor_outlier2.R'))
+source(paste0(WD,'/functions/DissimilarityMatrixNominal.R'))
+source(paste0(WD,'/functions/lm_eqn.R'))
+source(paste0(WD,'/functions/reorder_cormat.R'))
+source(paste0(WD,'/functions/save_pheatmap_pdf.R'))
+source(paste0(WD,'/functions/modeav.R'))
+source(paste0(WD,'/functions/count_na.R'))
+source(paste0(WD,'/functions/se_mean.R'))
+source(paste0(WD,'/functions/Mode.R'))
+source(paste0(WD,'/functions/NumericSummaryStats.R'))
+source(paste0(WD,'/functions/AutoScaleMatrix.R'))
+source(paste0(WD,'/functions/ReverseAutoScaleMatrix.R'))
+source(paste0(WD,'/functions/CenterMatrix.R'))
+source(paste0(WD,'/functions/RangeScaleMatrix.R'))
+source(paste0(WD,'/functions/ParetoScaleMatrix.R'))
+source(paste0(WD,'/functions/VastScaleMatrix.R'))
+source(paste0(WD,'/functions/LevelScaleMatrix.R'))
+source(paste0(WD,'/functions/Log10Matrix.R'))
+source(paste0(WD,'/functions/PowerMatrix.R'))
+
+```
+
+
+# Set Variables
+```{r Set Variables}
+
+################################################################################
+####################### Set Variables ##########################################
+################################################################################
+
+# Dataset
+###################################
+dataset <- 'untargeted'
+
+# Named
+###################################
+named <- 'named'
+
+# Tissue
+###################################
+tissue <- 'liver'
+
+# Metabolite family
+###################################
+metab_family <- 'hilicpos'
+
+# Transformation Technique
+###################################
+# Original Data
+Untransformed <- 'COUNT_DATA'
+
+# Correlation
+###################################
+Corr <- 'Pearson'
+Corr <- 'Spearman'
+
+
+```
+
+# Load the Metadata and Count Data
+```{r Load MetaData}
+# Load the Data
+################################################################################
+# Files
+metadata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-metadata-table_steep.rds')
+# Load Data
+metadata_df <- readRDS(file = metadata_rds)
+
+metadata_df %>%
+  head(n =2) %>% kbl() %>% kable_styling()
+
+# Start the clock
+ptm <- proc.time()
+# Takes 21+ seconds (881.6 Mb) 1073+ seconds for (7.5Gb)
+#countdata_rds <- paste0(WD, #'/data/20201010_pass1a-metabolomics-countdata-nested_steep.rds')
+
+# Load a specific tissues count data
+# Liver takes 230 seconds (4 min)
+#countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested-',tissue,'_steep.rds')
+
+# Load a specific metabolite family count data
+# ac takes 2 seconds
+# hilicpos takes 453 seconds (on MB) or 260 seconds (on GL with 40 MB 2 cores)
+# All data (original + autoscaled) takes 170 seconds on MB
+countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested-orig_steep.rds')
+
+# Load the data
+countdata_df <- readRDS(file = countdata_rds)
+
+# Stop the clock
+proc.time() - ptm
+
+
+```
+
+# Load & Incorporate the Phenotype Data
+```{r Incorporate Phenotype Data}
+# Load the phenotype data
+pheno_obj <- paste0(WD,"/data/20201021_pass1a-06-pheno-viallabel_steep.rds")
+pheno_df <- readRDS(pheno_obj)
+
+# Set a vector for Exercise/Control Levels and Colors
+ec_levels <- c('Exercise - IPE',
+               'Exercise - 0.5 hr',
+               'Exercise - 1 hr',
+               'Exercise - 4 hr',
+               'Exercise - 7 hr',
+               'Exercise - 24 hr',
+               'Exercise - 48 hr',
+               'Control - IPE',
+               'Control - 7 hr')
+ec_colors <- c('gold',
+               'darkgoldenrod1',
+               'orange',
+               'darkorange',
+               'darkorange2',
+               'darkorange3',
+               'darkorange4',
+               'steelblue1',
+               'steelblue4')
+
+pheno_df %>%
+  head(n =2) %>% kbl() %>% kable_styling()
+
+```
+
+
+# Explore Metadata
+```{r Explore Metadata}
+
+# First cut is either by tissue or metabolite family/tech
+metadata_df %>% 
+  select(TISSUE,METAB_FAMILY) %>% table() %>% as.data.frame.matrix() %>%
+  select("hilicpos","rppos","rpneg","lrppos","lrpneg","ionpneg","cer","ac",
+         "oxylipneg","tca","amines","sphm","ka","aa","3hib","nuc","acoa","oa","baiba") %>%
+  arrange(desc("hilicpos"),desc("rppos"),desc("rpneg"),desc("lrppos"),desc("lrpneg"),
+          desc("ionpneg"),desc("cer"),desc("ac"),desc("oxylipneg"),desc("tca"),
+          desc("amines"),desc("sphm"),desc("ka"),desc("aa"),desc("3hib"),desc("nuc"),
+          desc("acoa"),desc("oa"),desc("baiba"))
+
+metadata_df %>% 
+  filter(NAMED == 'named') %>%
+  filter(METAB_FAMILY == metab_family) %>%
+        select(DATASET,TISSUE,METAB_FAMILY,NAMED,STUDY_INSTITUTE,
+               CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE,DATASET) %>% 
+        unite("CHROM_MS_ION", CH_CHROMATOGRAPHY_TYPE:MS_TYPE:MS_ION_MODE, remove = T)
+
+
+
+```
+
+
+# Collect the Shared Metabolites and Samples
+```{r Collect Shared Metabolites and Samples}
+
+# There are 20 tissues
+# Shared metabolites across all 20 tissues
+all_tis_mets <- countdata_df %>%
+  filter(METAB_FAMILY == metab_family) %>%
+  filter(NAMED == named) %>%
+  select(-COUNT_DATA, -'SAMPLE_DATA') %>%
+  unnest(cols = 'METABOLITE_DATA') %>%
+  filter(!is.na(refmet_name)) %>%
+  group_by(refmet_name) %>%
+  mutate(SHARED_METABOLITE_N = n()) %>%
+  arrange(desc(SHARED_METABOLITE_N)) %>%
+  ungroup() %>%
+  filter(SHARED_METABOLITE_N == 20) %>%
+  select(refmet_name) %>% unlist() %>% as.character() %>% unique()
+  
+all_tis_mets
+
+# Create a metadata table elongated to labelid (just the major metadata variables) from the count data df
+meta_labelid_df <- countdata_df %>%
+  filter(METAB_FAMILY == metab_family) %>%
+  filter(NAMED == named) %>%
+  select(-COUNT_DATA, -'METABOLITE_DATA') %>%
+  unnest(cols = 'SAMPLE_DATA') %>%
+  mutate(viallabel = sample_id) %>%
+  select(-raw_file, -sample_id) %>%
+  select(TISSUE, sample_type, viallabel) %>%
+  unique()
+
+```
+
+# Examine the Relationship between metadata variables: Try to infer batches 
+```{r}
+metadata_df %>%
+filter(METAB_FAMILY == metab_family) %>%
+  filter(NAMED == named) %>%
+  select(DATASET,NAMED,TISSUE,METAB_FAMILY,STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE) %>%
+  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
+  arrange(TISSUE,STUDY_INSTITUTE,TECHNOLOGY)
+```
+
+# Examine the Distribution of the Original Data
+# WARNING: Subsets of samples have been taken for development purposes
+# Ensure that QC samples are not used in scaling
+```{r Boxplots and Density Plots to Measure Distribution, results='asis'}
+# Examine the Distributions for original data and transformed data
+for(TFORM in c('Untransformed','AutoScaled')){
+  #Starting with matrix: convert to long format dataframe for plotting purposes
+  # When transforming, ensure that QC samples are not present
+  if(TFORM == 'Untransformed'){
+    tissue_long_df <- countdata_df %>%
+    ungroup() %>%
+    filter(METAB_FAMILY == metab_family) %>%
+    filter(NAMED == named) %>%
+    select(TISSUE, COUNT_DATA) %>%
+    unnest(COUNT_DATA) %>%
+    filter(METABOLITE_NAME %in% all_tis_mets) %>%
+    filter(!grepl('QC', viallabel) ) %>%
+    select(TISSUE,viallabel, METABOLITE_NAME,VALUE)
+    
+  }else if(TFORM == 'AutoScaled'){
+    tissue_long_int <- countdata_df %>%
+    ungroup() %>%
+    filter(METAB_FAMILY == metab_family) %>%
+    filter(NAMED == named) %>%
+    select(TISSUE, COUNT_DATA) %>%
+    unnest(COUNT_DATA) %>%
+    filter(METABOLITE_NAME %in% all_tis_mets) %>%
+    filter(!grepl('QC', viallabel) ) %>%
+    select(viallabel, METABOLITE_NAME,VALUE) %>%
+    pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
+    tibble::column_to_rownames(var = "viallabel") %>%
+    as.matrix() %>% 
+    AutoScaleMatrix() %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column(var = "viallabel") %>%
+    pivot_longer(names_to = "METABOLITE_NAME", values_to = "VALUE", cols = all_of(all_tis_mets))
+    
+    # Join the tissues
+    tissue_join <- countdata_df %>%
+      ungroup() %>%
+      filter(METAB_FAMILY == metab_family) %>%
+      filter(NAMED == named) %>%
+      select(TISSUE, COUNT_DATA) %>%
+      unnest(COUNT_DATA) %>%
+      filter(METABOLITE_NAME %in% all_tis_mets) %>%
+      filter(!grepl('QC', viallabel) ) %>%
+      select(viallabel,TISSUE) %>%
+      unique()
+    tissue_long_df <- left_join(tissue_long_int, tissue_join, by = c('viallabel'))
+  }
+  # Plot Boxplots for all shared metabolites faceted by tissue
+  ################################################################################
+  tissue_long_df$TISSUE <- factor(tissue_long_df$TISSUE)
+  p <- tissue_long_df %>%
+    slice_sample(prop = 0.1) %>%
+    ggplot(aes(y = METABOLITE_NAME, x = VALUE)) +
+    geom_boxplot(aes(color = TISSUE), alpha = 0.5) +
+    labs(title="Box Plots of Metabolite Abundances Across Tissues",
+               x = "Abundance", y = "") +
+    theme(axis.text.y=element_text(size=4)) +
+    theme(axis.text.x=element_text(size=8)) +
+    theme(legend.text = element_text(size=8)) +
+    facet_wrap(~ TISSUE)
+  print(p)
+# Plot the density plot for all the gene counts
+################################################################################
+  if(TFORM == 'Untransformed'){
+    p <- tissue_long_df %>%
+      slice_sample(prop = 0.1) %>%
+      ggplot(aes(x = VALUE, color = TISSUE)) +
+      geom_density() +
+      labs(title="Density Plot of Metabolite Abundances Across Tissues",
+           x = "Abundance",y = "Density") +
+      facet_wrap(~ TISSUE) +
+      xlim(0,1000000)
+    }else if(TFORM == 'AutoScaled'){
+      p <- tissue_long_df %>%
+        slice_sample(prop = 0.1) %>%
+        ggplot(aes(x = VALUE, color = TISSUE)) +
+        geom_density() +
+        labs(title="Density Plot of Metabolite Abundances Across Tissues",
+             x = "Abundance",y = "Density") +
+        facet_wrap(~ TISSUE)
+      }
+    print(p)
+
+    # Summary Statistics of Density Plot Distribution Across Tissues
+    ################################################################################
+    tissues <- tissue_long_df$TISSUE %>% as.character() %>% unique()
+    # Iterate through the cas sites and collect vectors
+    #cas_site <- 'duke'
+    df_all <- data.frame()
+    #tt <- tissues[1]
+    for(tt in tissues){
+      # Collect numeric vector
+      num_vec <- tissue_long_df %>%
+        filter(TISSUE == tt) %>%
+        select(VALUE) %>% unlist() %>% unname()
+      df <- NumericSummaryStats(num_vec)
+      row.names(df) <- tt
+      df_all <- rbind(df_all, df)
+    }
+    df_all %>%
+      arrange(MEDIAN) %>% print()
+}
+
+```
+
+# Impute Missing Values (Necessary for PCA)
+# Combine AutoScaled Datasets for PCA (Matrix; Columns:Metabolites, Rows: Unique_ID) (labelid+INSTITUTE+TECH))
+-PREFA and PREFB are pooled samples for QC purposes
+# PCA Analysis (Shared Samples and Shared Metabolites)
+```{r Impute Missing Values + PCA}
+
+for(TFORM in c('Untransformed','AutoScaled')){
+  if(TFORM == 'Untransformed'){
+    tissue_mat <- countdata_df %>%
+    ungroup() %>%
+    filter(METAB_FAMILY == metab_family) %>%
+    filter(NAMED == named) %>%
+    select(TISSUE, COUNT_DATA) %>%
+    unnest(COUNT_DATA) %>%
+    filter(METABOLITE_NAME %in% all_tis_mets) %>%
+    mutate(viallabel = ifelse(grepl('QC_',viallabel), paste0(viallabel,'__',TISSUE), viallabel)) %>%
+    select(viallabel, METABOLITE_NAME,VALUE) %>%
+    pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
+    tibble::column_to_rownames(var = "viallabel") %>%
+    as.matrix()
+  }else if(TFORM == 'AutoScaled'){
+    tissue_mat <- countdata_df %>%
+    ungroup() %>%
+    filter(METAB_FAMILY == metab_family) %>%
+    filter(NAMED == named) %>%
+    select(TISSUE, COUNT_DATA) %>%
+    unnest(COUNT_DATA) %>%
+    filter(METABOLITE_NAME %in% all_tis_mets) %>%
+    mutate(viallabel = ifelse(grepl('QC_',viallabel), paste0(viallabel,'__',TISSUE), viallabel)) %>%
+    select(viallabel, METABOLITE_NAME,VALUE) %>%
+    pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
+    tibble::column_to_rownames(var = "viallabel") %>%
+    as.matrix() %>% AutoScaleMatrix()
+  }
+  
+  # Determine the proportion of missing data
+  na_df <- data.frame()
+  for(i in 1:ncol(tissue_mat)){
+    # Collect numeric vector
+    num_vec <- tissue_mat[,i] %>% unname()
+    df <- NumericSummaryStats(num_vec)
+    row.names(df) <- colnames(tissue_mat)[i]
+    na_df <- rbind(na_df, df)
+  }
+  na_df %>% select(NA_COUNT, NA_FREQ) %>%
+    filter(NA_FREQ > 0) %>%
+    arrange(desc(NA_FREQ)) %>% kbl() %>% kable_styling()
+
+  # Collect the major columns to be adjsuted
+  imputed_cols10 <- na_df %>% select(NA_COUNT, NA_FREQ) %>%
+    filter(NA_FREQ > 0) %>%
+    arrange(desc(NA_FREQ)) %>%
+    head(n = 10) %>% row.names()
+
+  # Use a knn method to impute missing values (need to come back and adjust)
+  preProcValues <- preProcess(tissue_mat,
+                              method = c("knnImpute"),
+                            k = floor(sqrt(ncol(tissue_mat))),
+                            knnSummary = mean)
+  # To get the normalizaed data
+  impute_tissue_mat <- predict(preProcValues, tissue_mat, na.action = na.pass)
+  # To denormalize ("deautoscale")
+  tissue_mat_knn <- ReverseAutoScaleMatrix(impute_tissue_mat)
+
+  # Examine the post impute data
+  #summary(tissue_mat)
+  #summary(tissue_mat_knn)
+
+  # Plot a PCA with outliers labeled
+  #dim(tissue_mat_knn)
+  #tissue_mat_sam <- tissue_mat_knn[sample(1:nrow(tissue_mat_knn), 200),]
+
+  pca <- prcomp(tissue_mat_knn, scale. = F)
+  percentVar <- pca$sdev^2/sum(pca$sdev^2)
+  PC <- pca$x %>% as.data.frame()
+  PC$viallabel_tissue <- as.character(row.names(pca$x))
+  PC <- PC %>%
+    tidyr::separate(col = viallabel_tissue, into = c('viallabel', 'QCtissue'),
+    sep = "__", remove = T)
+  # Join the phenotype data and additional metadata
+  PC <- left_join(PC, pheno_df, by = 'viallabel')
+  meta_labelid_df1 <- meta_labelid_df %>%
+    filter(sample_type == 'Sample') %>%
+    mutate(sample_type = as.character(sample_type))
+  meta_labelid_df2 <- meta_labelid_df %>%
+    filter(sample_type != 'Sample')
+  PC <- left_join(PC, meta_labelid_df1, by = 'viallabel') %>%
+    mutate(sample_type = ifelse(grepl('QC_PREFA',viallabel), 'QC-DriftCorrection', sample_type)) %>%
+    mutate(sample_type = ifelse(grepl('QC_PREFB',viallabel), 'QC-Pooled', sample_type)) %>%
+    mutate(sample_type = ifelse(grepl('QC_Sed',viallabel), 'QC-Reference', sample_type)) %>%
+    mutate(TISSUE = ifelse(grepl('QC_PREFA',viallabel), QCtissue, TISSUE)) %>%
+    mutate(TISSUE = ifelse(grepl('QC_PREFB',viallabel), QCtissue, TISSUE)) %>%
+    mutate(TISSUE = ifelse(grepl('QC_Sed',viallabel), QCtissue, TISSUE))
+  table(PC$sample_type) %>% kbl() %>% kable_styling()
+
+  PC %>%
+    filter(sample_type %in% c('Sample','QC-Pooled')) %>%
+    group_by(sample_type,TISSUE) %>%
+      mutate(SAMPLE_N = n()) %>%
+      select(sample_type,TISSUE,SAMPLE_N) %>%
+      unique() %>% pivot_wider(names_from = sample_type, values_from = SAMPLE_N)
+
+  # Clean up annotations
+  PC$sample_type <- as.character(PC$sample_type)
+  PC$TISSUE <- as.character(PC$TISSUE)
+  PC_DRIFT <- PC %>%
+    filter(sample_type %in% c('QC-DriftCorrection','Sample')) %>%
+    mutate(QC_DRIFT = ifelse(sample_type == 'QC-DriftCorrection', 'QC-DriftCorrection' ,sample_type))
+  PC_Pooled <- PC %>%
+    filter(sample_type %in% c('QC-Pooled','Sample')) %>%
+    mutate(QC_DRIFT = ifelse(sample_type == 'QC-Pooled', 'QC-Pooled' ,sample_type))
+  PC_REF <- PC %>%
+    filter(sample_type %in% c('QC-Reference','Sample')) %>%
+    mutate(QC_DRIFT = ifelse(sample_type == 'QC-Reference', 'QC-Reference' ,sample_type))
+
+  # Plot the pca (one outlier removed)
+  p<- PC_Pooled %>%
+    filter(viallabel != '90038016903') %>%
+    mutate(dot_size = ifelse(grepl('QC',sample_type), 1.5, 1)) %>%
+        ggplot(aes(x = PC1, y = PC2, color=TISSUE, shape = sample_type, size = dot_size)) +
+        geom_point(alpha = 0.5) +
+        ggtitle(paste0(metab_family,',',named,',',dataset,',','QC_Pooled',',',TFORM)) + 
+        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
+        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance'))
+        #theme(aspect.ratio=1)
+  print(p)
+  p<- PC_REF %>%
+    filter(viallabel != '90038016903') %>%
+    mutate(dot_size = ifelse(grepl('QC',sample_type), 1.5, 1)) %>%
+        ggplot(aes(x = PC1, y = PC2, color=TISSUE, shape = sample_type, size = dot_size)) +
+        geom_point(alpha = 0.5) +
+        ggtitle(paste0(metab_family,',',named,',',dataset,',','QC_REF',',',TFORM)) + 
+        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
+        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance'))
+        #theme(aspect.ratio=1)
+  print(p)
+ 
+}
+
+
+```
+
+
+
+
+
+
