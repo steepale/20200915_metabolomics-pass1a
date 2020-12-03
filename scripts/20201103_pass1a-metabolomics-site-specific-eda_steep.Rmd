@@ -441,7 +441,8 @@ df_shared_casrun %>%
 run_n <- 2
 cas_n <- 2
 tissue <- 'liver'
-runs <- "Duke University_ac;Broad Institute_hilicpos"
+#runs <- "Duke University_ac;Broad Institute_hilicpos"
+runs <- "Broad Institute_hilicpos;University of Michigan_rppos"
 shared_vals <- df_shared_casrun %>%
   filter(TISSUE == tissue) %>%
   filter(RUNS == runs)
@@ -464,6 +465,69 @@ plot_df <- countdata_df %>%
   filter(METABOLITE_NAME %in% shared_mets) %>%
   filter(labelid %in% shared_sams) %>%
   filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
+
+# To Data as matrixes
+################################################################################
+# Filename Nomenclature
+tissue_study_institute_metab_outs <- plot_df %>%
+  unite(TISSUE,STUDY_INSTITUTE_METAB_FAMILY, col = TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>%
+  select(TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>% unlist() %>% as.character() %>% unique() %>%
+  str_replace_all('_','-') %>% str_replace_all(' ','-')
+# Collect the matrixes
+run_mats <- plot_df %>%
+  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+  map(select, labelid, METABOLITE_NAME, VALUE) %>%
+  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+  map(arrange, labelid) %>%
+  map(column_to_rownames, var = "labelid") %>%
+  map(as.matrix)
+run_mat1 <- run_mats[[1]]
+run_mat2 <- run_mats[[2]]
+
+  # Collect the samples (remove QCs) & join sample order
+sample_join <- countdata_df %>%
+  ungroup() %>%
+  filter(TISSUE == tissue) %>%
+  filter(NAMED == "named") %>%
+  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+  unnest(SAMPLE_DATA) %>%
+  filter(sample_type == 'Sample') %>%
+  select(sample_id, sample_order)
+
+# Collect the sample orders
+run_ords <- plot_df %>%
+  left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
+  filter(labelid %in% shared_sams) %>%
+  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+  map(select, labelid, sample_order) %>%
+  map(unique) %>%
+  map(arrange, labelid)
+run_ord1 <- run_ords[[1]]
+run_ord2 <- run_ords[[2]]
+
+if(all(row.names(run_mat1) == row.names(run_mat2))){
+  mat_file1 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[1],'_steep.RDS')
+  mat_file2 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[2],'_steep.RDS')
+  saveRDS(run_mat1, mat_file1)
+  saveRDS(run_mat2, mat_file2)
+  # Save the order files
+  ord_file1 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[1],'-sample-order_steep.RDS')
+  ord_file2 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[2],'-sample-order_steep.RDS')
+  saveRDS(run_ord1, ord_file1)
+  saveRDS(run_ord2, ord_file2)
+}
+# run_mat1l <- readRDS(mat_file1)
+# run_mat1l == run_mat1
+# run_mat2l <- readRDS(mat_file2)
+# run_mat2l == run_mat2
+# run_ord1l <- readRDS(ord_file1)
+# run_ord1l == run_ord1
+# run_ord2l <- readRDS(ord_file2)
+# run_ord2l == run_ord2
+
+
+
 
 # Plot Boxplots faceted by shared metabolites
 ################################################################################

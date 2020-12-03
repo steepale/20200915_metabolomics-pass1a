@@ -2,4 +2,4 @@ data
 docs
 plots
 scripts/.Rhistory
-reports/*/*.html
+files_to_share
