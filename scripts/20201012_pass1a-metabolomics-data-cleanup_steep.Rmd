@@ -608,7 +608,7 @@ tissue_study_institute_metab_families <- countdata_df %>%
 
 # DEV
 # tissue_study_institute_metab_family <- "gastrocnemius_Mayo Clinic_amines"
-for(tissue_study_institute_metab_family in tissue_study_institute_metab_families[1]){
+for(tissue_study_institute_metab_family in tissue_study_institute_metab_families){
   
   # Variables
   tissue_study_institute_metab_family_out <- tissue_study_institute_metab_family %>% 
