@@ -1,0 +1,161 @@
+---
+title: "Jun Codes"
+author: "Steep"
+date: "12/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+
+# To Render the Markdown, run this line in console
+#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201103_pass1a-metabolomics-site-specific-eda_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/20201103_pass1a-metabolomics-site-specific-eda_steep.html', quiet = TRUE, clean = TRUE)
+```
+
+
+
+
+### Exploratory Plots for Normalization
+```{r Exploratory Plots for Normalization}
+# Select n metabolites at random
+set.seed(123)
+sample_mets <- sample(shared_mets, 10)
+# Select n combinations of metabolites at random
+combo_mets <- combinat::combn(sample_mets, 2, simplify = F) %>% sample(4)
+cbo <- combo_mets[1] %>% unlist()
+cbo[1] <- "Alanine"
+cbo[2] <- "Creatine"
+
+data <- run_mat2
+
+run <- "University of Michigan_rppos"
+# Rename data object
+for(run in names(run_mats)){
+  data <- run_mats[[run]]
+  colnames(data) <- colnames(data) %>% str_remove_all("_University of Michigan_rppos")
+  for(cbo in combo_mets){
+  # Remove NA values
+  filter1 <- is.na(data[,cbo[1]])
+  tmp1 <-data[!filter1,]
+  filter2 <- is.na(data[,cbo[2]])
+  #sum(filter2)
+  tmp2 <-data[!filter2,]
+  # Plot the raw Abundances
+  #########################
+  plot(tmp1[,cbo[1]],tmp2[,cbo[2]], xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Raw Abundances'))
+  # Plot the log Abundances
+  ########################
+  plot(log(tmp1[,cbo[1]]),log(tmp2[,cbo[2]]), xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Log10 Abundances'))
+  # Plot the MA Plot
+  x <- tmp1[,cbo[1]] #%>% log()
+  y <- tmp2[,cbo[2]] #%>% log()
+  plot((x+y)/2,x-y, main = paste0(run,': MA Plot (Log10 Abundances)'))
+
+  # Plot the ranked Abundances
+  ########################
+  plot(rank(tmp1[,cbo[1]]),rank(tmp2[,cbo[2]]),pch=16,cex=0.6, xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Ranked Abundances'))
+  # Plot the Ranked Abundances
+  #########################
+  plot(sort(tmp1[,cbo[1]]), 
+ylab = paste0(cbo[1]), 
+main = paste0(run,': Ranked Abundances'))
+  plot(sort(tmp1[,cbo[2]]), 
+ylab = paste0(cbo[2]), 
+main = paste0(run,': Ranked Abundances'))
+  # Plot The Ranked Log10 Abundances
+  ########################
+  plot(log(sort(tmp1[,cbo[1]])), 
+ylab = paste0(cbo[1],' (Log10)'), 
+main = paste0(run,': Ranked Log10 Abundances'))
+  plot(log(sort(tmp1[,cbo[2]])), 
+ylab = paste0(cbo[2],' (Log10)'), 
+main = paste0(run,': Ranked Log10 Abundances'))
+}
+}
+
+br<-readRDS(paste0(WD,"/data/20201103_broad-hilicpos-matrix-raw-4-jun_steep.RDS"))
+duke<- readRDS(paste0(WD,"/data/20201103_duke-ac-matrix-raw-4-jun_steep.RDS"))
+br_order1 <- row.names(br) %>% str_split(pattern = "_") %>% map(head(1)) %>% unlist() %>% sort()
+br_order <- paste0(br_order1, "_Broad Institute_hilicpos")
+br <- br[br_order,]
+br_feat <- colnames(br) %>% sort()
+br <- br[,br_feat]
+
+duke_order1 <- row.names(duke) %>% str_split(pattern = "_") %>% map(head(1)) %>% unlist() %>% sort()
+duke_order <- paste0(duke_order1, "_Duke University_ac")
+duke <- duke[duke_order,]
+duke_feat <- colnames(duke) %>% sort()
+duke <- duke[,duke_feat]
+
+duke_order1 == br_order1
+duke_feat == br_feat
+
+#mismatched orders for both rows and columns
+#sample78<-read.delim("sample78.txt",header=T,row.names=1,sep="\t")
+#feature21<-read.delim("feature21.txt",header=T,row.names=1,sep="\t")
+# br2<-br[order(sample78[,1]),order(feature21[,1])]
+# duke2<-duke[order(sample78[,2]),order(feature21[,2])]
+br2 <- br
+duke2 <- duke
+
+paletteLength <- 100
+redblue100 <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+
+
+broad <- readRDS("/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/files_to_share/20201103_named-site-comparison-0001_brown-adipose_m70-s77_broad-institute-hilicpos_steep.RDS")
+umich <- readRDS("/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/files_to_share/20201103_named-site-comparison-0001_brown-adipose_m70-s77_university-of-michigan-rppos_steep.RDS")
+
+feat <- colnames(broad) %>% sort()
+broad <- broad[,feat]
+umich <- umich[,feat]
+
+colnames(broad) == colnames(umich)
+rownames(broad) == rownames(umich)
+
+image(cor(cbind(broad,umich),method="spearman"),col=redblue100)
+image(cor(cbind(t(broad),t(umich)),method="spearman"),col=redblue100)
+
+image(cor(cbind(br2,duke2),method="spearman"),col=redblue100)
+
+image(cor(cbind(t(br2),t(duke2)),method="spearman"),col=redblue100)
+
+CountZeros <- function(x){
+  sum(x==0)
+}
+
+boxplot(data.frame(br2))
+f0.duke <- apply(duke2, 2, CountZeros)
+f0.duke
+#remove the 2nd feature
+br2<-br2[,-2]
+duke2<-duke2[,-2]
+
+f.mean.duke<-apply(duke2,2,mean)
+f.mean.br<-apply(br2,2,mean)
+f.median.duke<-apply(duke2,2,median)
+f.median.br<-apply(br2,2,median)
+
+s.median.duke<-apply(duke2,1,median)
+s.median.br<-apply(br2,1,median)
+
+plot(s.median.br,s.median.duke, ylim=c(0,5))
+library(preprocessCore)
+norm.br<-normalize.quantiles(t(br2))
+norm.duke<-normalize.quantiles(t(duke2))
+
+plot(log(norm.br[,5]),pch=16,cex=0.6)
+plot(log(norm.br[rank(norm.br[,2]),5]),pch=16,cex=0.6)
+
+#cannot use due to tied values
+dim(norm.br)
+dim(norm.duke)
+image(cor(cbind(t(norm.br),t(norm.duke)),method="spearman"),col=redblue100)
+
+
+# Look for tied ranks and determine if this is correct
+plot(log(sort(tmp[,3])[1:48]))
+
+```

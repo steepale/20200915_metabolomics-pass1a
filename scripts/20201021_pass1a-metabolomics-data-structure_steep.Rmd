@@ -1,27 +1,40 @@
 ---
-title: "20201021_pass1a-metabolomics-data-structure_steep"
-author: "Steep"
+title: | 
+ | PASS1A (Rat) Metabolomics: 
+ | Data Structures
+author: "Alec Steep"
 date: "10/21/2020"
-always_allow_html: true
+#always_allow_html: true
 output: 
-  github_document:
+  html_document:
     toc: true
-    #code_folding: hide
-    #highlight: zenburn
+    code_folding: hide
+    highlight: zenburn
+    css: ../css/style.css
 ---
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 knitr::opts_chunk$set(cache = FALSE)
+
+# To Render the Markdown, run this line in console
+#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201103_pass1a-metabolomics-site-specific-eda_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/20201103_pass1a-metabolomics-site-specific-eda_steep.html', quiet = TRUE, clean = TRUE)
+```
+
+##### CSS Top Styling
+```{r CSS Top Styling}
+writeLines("td, th { padding : 3px } th { background-color:white; color:black; border:1px solid black; text-align:center } td {color:black; border:1px solid black; word-wrap:break-word; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; max-width:300px; text-align:left}", con= "../css/style.css")
+
 ```
 
 ## Goals of Analysis
-# Visualize the Data Structure of Metabolomics Data
+  + Visualize the Data Structure of Metabolomics Data
 
-## Setup the Environment
+## Analysis
+
+### Setup the Environment
 ```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE}
 ################################################################################
 ##### Resources and Dependencies ###############################################
@@ -49,8 +62,9 @@ if(COMP == "MacBook"){
 # Load dependencies
 pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","sfsmisc",
                 "pheatmap","caret","ggforce","igraph","rafalib","cluster","ggrepel")
-lapply(pacs...man, FUN = function(X) {
-        do.call("library", list(X)) })
+for(pac in pacs...man){
+  suppressWarnings(suppressPackageStartupMessages(library(pac, character.only = TRUE)))
+}
 
 ############################################################
 ##### Functions ############################################
@@ -90,7 +104,7 @@ source(paste0(WD,'/functions/range_chr.R'))
 ```
 
 
-# Set Variables
+### Set Variables
 ```{r Set Variables}
 
 ################################################################################
@@ -123,8 +137,8 @@ Corr <- 'Spearman'
 
 ```
 
-# Load the Metadata and Count Data
-```{r Load MetaData}
+### Load the Data
+```{r Load Count Data & MetaData}
 # Load the Data
 ################################################################################
 # Files
@@ -143,19 +157,35 @@ ptm <- proc.time()
 
 # Load a specific metabolite family count data
 # ac takes 2 seconds
+# hilicpos takes 453 seconds (on MB) or 260 seconds (on GL with 40 MB 2 cores)
+# All data (original + autoscaled) takes 170 seconds on MB
 countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested_steep.rds')
 
 # Load the data
 countdata_df <- readRDS(file = countdata_rds)
 
 # Stop the clock
-proc.time() - ptm
-
+#proc.time() - ptm
 ```
 
+### Metadata
+```{r Metadata Format}
+metadata_df %>%
+  head %>% 
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
 
-# Load & Incorporate the Phenotype Data
-```{r Incorporate Phenotype Data}
+### Count Data
+```{r Count Data Format}
+countdata_df %>%
+  head %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Load, Incorporate, & Display Phenotype Data
+```{r Incorporate Phenotype Data, results='asis'}
 # Load the phenotype data
 pheno_obj <- paste0(WD,"/data/20201021_pass1a-06-pheno-viallabel_steep.rds")
 pheno_df <- readRDS(pheno_obj)
@@ -180,12 +210,10 @@ ec_colors <- c('gold',
                'steelblue1',
                'steelblue4')
 
-# table(pheno_df$Specimen.Processing.sampletypedescription)
-# pheno_df %>%
-#   filter(Specimen.Processing.sampletypedescription == 'Liver') %>%
-#   select(Key.anirandgroup) %>% table()
-
-
+pheno_df %>%
+  head(n = 20) %>% 
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
 ```
 
 # Attempt to determine the number of batches by sample order
@@ -463,6 +491,7 @@ mypar()
 df <- metadata_df %>%
   select(DATASET,NAMED,TISSUE,STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE,METAB_FAMILY) %>%
   unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY")
+
 # Collect order of factors for variables
 dataset_levels <- df$DATASET %>% table() %>% sort() %>% names()
 named_levels <- df$NAMED %>% table() %>% sort() %>% rev() %>% names()
@@ -1011,350 +1040,6 @@ for(cas_site in cas_sites){
 }
 df_all
 ```
-
-################################################################################
-# Subset Data: Collect Only Shared Samples and Metabolites
-################################################################################
-
-# Plot boxplots and matched density plot after normalization
--Boxplots
--Density plot
--Summary Statistics
-```{r Boxplots and Density Plots to Measure Normalization}
-# Plot Boxplots faceted by randomly selected genes
-################################################################################
-ac_shared_long_as %>%
-  ggplot(aes(y = name, x = value, color = cas)) +
-  geom_boxplot(alpha = 0.8) +
-  labs(title="Box Plots of Transformed Metabolite Abundances",
-             x = "Abundance", y = "") 
-
-# Plot the density plot for all the gene counts
-################################################################################
-ac_shared_long_as %>%
-  ggplot(aes(x = value, color = cas)) +
-  geom_density() +
-  labs(title="Density Plot of Transformed Metabolite Abundances",
-       x = "Abundance",
-       y = "Density")
-
-# Summary Statistics of Density plot distribution
-################################################################################
-cas_sites <- ac_shared_long_as$cas %>% as.character() %>% unique()
-# Iterate through the cas sites and collect vectors
-#cas_site <- 'duke'
-df_all <- data.frame()
-for(cas_site in cas_sites){
-  # Collect numeric vector
-  num_vec <- ac_shared_long_as %>%
-    filter(cas == cas_site) %>%
-    select(value) %>% unlist() %>% unname()
-  df <- NumericSummaryStats(num_vec)
-  row.names(df) <- cas_site
-  df_all <- rbind(df_all, df)
-}
-df_all
-```
-
-
-# Plot a Sample by Sample Correlation Matrix (shared (shared == all) samples and shared metabolites)
-```{r Sample by Sample Correlations}
-################################################################################
-####################### Sample by Sample Correlations ##########################
-################################################################################
-
-# Subset Matrixes
-ac_duke_mat_shared_as <- ac_duke_mat_all_as[shared_sams,shared_metabs]
-ac_mayo_mat_shared_as <- ac_mayo_mat_all_as[shared_sams,shared_metabs]
-
-# Concatenate the matrixes by column and relabel columns (columns = metabolites)
-################################################################################
-# all(rownames(ac_duke_mat) == rownames(ac_mayo_mat))
-# all(colnames(ac_duke_mat) == colnames(ac_mayo_mat))
-ac_duke_mat1 <- ac_duke_mat_shared_as
-ac_mayo_mat1 <- ac_mayo_mat_shared_as
-rownames(ac_duke_mat1) <- paste0(rownames(ac_duke_mat1),'_DUKE')
-rownames(ac_mayo_mat1) <- paste0(rownames(ac_mayo_mat1),'_MAYO')
-# Make Samples be columns in product below
-
-ac_concat_mat <- cbind(t(ac_duke_mat1),t(ac_mayo_mat1))
-# cor1 <- cor(ac_concat_mat)
-# image(cor1)
-
-# Create an NxN Matrix of correlation
-if(Corr == 'Pearson'){
-        cor1 <- stats::cor(ac_concat_mat, method = 'pearson') %>% round(digits = 3)
-}else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(ac_concat_mat, method = 'spearman') %>% round(digits = 3)
-}
-
-# Melt the correlation matrix
-melted_cormat <- melt(cor1, na.rm = TRUE)
-
-################################################################################
-####################### All Shared Samples and Metabolites #####################
-################################################################################
-
-# Widen the dataframwe back to matrix
-cormat1 <- melted_cormat %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat1) <- cormat1$Var1
-cormat1 <- cormat1 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat1 <- cormat1[sort(rownames(cormat1)),sort(colnames(cormat1))]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-
-# Plot the heatmap
-p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, cluster_rows = T, cluster_cols = T)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201021_sample-by-sample-correlation-heatmap-shared_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 18, height = 18)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-
-################################################################################
-####################### Only Reciprocal Pairs ##################################
-################################################################################
-
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-melted_cormat2 <- melted_cormat %>%
-  filter(!(grepl('MAYO', Var1) & grepl('MAYO', Var2))) %>%
-  filter(!(grepl('DUKE', Var1) & grepl('DUKE', Var2))) %>%
-  filter(grepl('DUKE', Var1)) %>%
-  filter(grepl('MAYO', Var2))
-# Widen the dataframwe back to matrix
-cormat2 <- melted_cormat2 %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat2) <- cormat2$Var1
-cormat2 <- cormat2 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat2 <- cormat2[sort(rownames(cormat2)),sort(colnames(cormat2))]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-
-# Plot the heatmap
-p_out <- pheatmap(cormat2, color=myColor, breaks=myBreaks, cluster_rows = F, cluster_cols = F)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201021_sample-by-sample-correlation-heatmap-shared-reciprocal_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-```
-
-# PCA Analysis (Shared Samples and Shared Metabolites)
-```{r PCA ANalysis (NxP) Shared Samples and Shared Metabolites}
-# Plot a PCA with outliers labeled
-dim(ac_concat_mat)
-pca <- prcomp(t(ac_concat_mat), scale. = F)
-percentVar <- pca$sdev^2/sum(pca$sdev^2)
-PC <- pca$x %>% as.data.frame()
-PC$labelid_cas <- as.character(row.names(pca$x))
-PC <- PC %>%
-  tidyr::separate(col = labelid_cas, into = c('labelid', 'cas'),
-  sep = "_", remove = T)
-# Join the phenotype data
-PC <- left_join(PC, pheno_df, by = 'labelid')
-
-p <- PC %>%
-        ggplot(aes(x = PC1, y = PC2, color=Key.anirandgroup, shape = cas)) +
-        geom_point(size = 3) +
-        ggtitle('Shared Samples and Shared Metabolites') + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
-        scale_color_manual(values=ec_colors) +
-        theme(aspect.ratio=1)
-
-
-p + ggforce::geom_mark_ellipse(aes(x=PC1, y=PC2,fill=cas, 
-                group=cas), color = 'black', alpha = 0.2)
-```
-
-
-# Plot a Metabolite by Metabolite Correlation Matrix (shared samples and shared metabolites)
-```{r Metabolite by Metabolite Correlation}
-################################################################################
-####################### Metabolite by Metabolite Correlations ##################
-################################################################################
-
-# Subset Matrixes
-ac_duke_mat1 <- ac_duke_mat_all_as[shared_sams,shared_metabs]
-ac_mayo_mat1 <- ac_mayo_mat_all_as[shared_sams,shared_metabs]
-
-# Concatenate the matrixes by column and relabel columns (columns = metabolites)
-################################################################################
-# all(rownames(ac_duke_mat) == rownames(ac_mayo_mat))
-# all(colnames(ac_duke_mat) == colnames(ac_mayo_mat))
-colnames(ac_duke_mat1) <- paste0(colnames(ac_duke_mat1),'_DUKE')
-colnames(ac_mayo_mat1) <- paste0(colnames(ac_mayo_mat1),'_MAYO')
-#rownames(ac_mayo_mat) <- paste0(rownames(ac_mayo_mat),'_MAYO')
-ac_concat_mat <- cbind(ac_duke_mat1,ac_mayo_mat1)
-# cor1 <- cor(ac_concat_mat)
-# image(cor1)
-
-# Create an NxN Matrix of correlation
-if(Corr == 'Pearson'){
-        cor1 <- stats::cor(ac_concat_mat, method = 'pearson') %>% round(digits = 3)
-}else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(ac_concat_mat, method = 'spearman') %>% round(digits = 3)
-}
-
-# Reorder the correlation matrix
-cormat <- reorder_cormat(cor1)
-
-# Melt the correlation matrix
-melted_cormat <- melt(cormat, na.rm = TRUE)
-
-################################################################################
-####################### All Shared Samples and Metabolites #####################
-################################################################################
-
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-
-# Widen the datafrmae back to matrix
-cormat1 <- melted_cormat %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat1) <- cormat1$Var1
-cormat1 <- cormat1 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat1 <- cormat1[sort(rownames(cormat1)),sort(colnames(cormat1))]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-
-
-# Plot the heatmap
-p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, cluster_rows = T, cluster_cols = T)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201021_metabolite-by-metabolite-correlation-heatmap-shared_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-
-################################################################################
-####################### Only Reciprocal Pairs ##################################
-################################################################################
-
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-melted_cormat2 <- melted_cormat %>%
-  filter(!(grepl('MAYO', Var1) & grepl('MAYO', Var2))) %>%
-  filter(!(grepl('DUKE', Var1) & grepl('DUKE', Var2))) %>%
-  filter(grepl('DUKE', Var1)) %>%
-  filter(grepl('MAYO', Var2))
-# Widen the datafrmae back to matrix
-cormat2 <- melted_cormat2 %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat2) <- cormat2$Var1
-cormat2 <- cormat2 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat2 <- cormat2[sort(rownames(cormat2)),sort(colnames(cormat2))]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-
-
-# Plot the heatmap
-p_out <- pheatmap(cormat2, color=myColor, breaks=myBreaks, cluster_rows = F, cluster_cols = F)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201021_metabolite-by-metabolite-correlation-heatmap-shared-reciprocal_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-```
-
-# Hone in on individual metabolites and plot boxplots and scatterplots
-# HERE
-```{r BoxPlots & ScatterPlots}
-################################################################################
-####################### Plot the BoxPlots of the Metabolites ###################
-################################################################################
-
-# Plot the metabolites in boxplots and compare sets
-############################################################
-ac_shared_long_as %>%
-  ggplot(aes(x = value, y = cas, color = cas)) +
-  geom_boxplot() +
-  geom_jitter(width = 0, height = 0.1, alpha = 0.4) +
-  theme(axis.title.y=element_blank()) +
-  xlab("Abundance") +
-  facet_wrap(~ name)
-
-################################################################################
-####################### Plot the Histograms of the Metabolites #################
-################################################################################
-
-ac_shared_long_as %>%
-  ggplot(aes(x = value, color = cas)) +
-  geom_freqpoly(binwidth = 0.2) +
-  ylab("Count") +
-  xlab("Abundance") +
-  facet_wrap(~ name)
-
-################################################################################
-####################### Plot the Scatterplots of the Metabolites ###############
-################################################################################
-
-# Plot scatter plots
-ac_joined_long_as %>%
-  ggplot(aes(x = DUKE, y = MAYO, label = sample)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", size = 1) +
-  geom_abline(linetype="dashed") +
-  facet_wrap(~ name) + 
-  coord_fixed(ratio=1)
-
-# Plot scatter plots ordered by sample (include R2 values)
-lm_df <- ac_joined_long_as
-names(lm_df)[3] <- 'x'
-names(lm_df)[4] <- 'y'
-# Iterate through each of the shared metabolites to collect summary info about their correlations
-r2_df <- data.frame()
-for(metab in shared_metabs){
-  met_df <- lm_df %>%
-    filter(name == metab)
-  r2_df <- rbind(r2_df, lm_eqn(met_df))
-}
-# Display summaries
-r2_df %>%
-  arrange(METABOLITE)
-r2_df %>%
-  arrange(desc(R2)) %>%
-  select(METABOLITE,R2)
-
-```
-
-
-
 
 
 # Visualize the MetaData

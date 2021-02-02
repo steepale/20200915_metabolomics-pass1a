@@ -17,12 +17,14 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 knitr::opts_chunk$set(cache = FALSE)
+
+# To Render the Markdown, run this line in console
+#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201012_pass1a-metabolomics-data-cleanup_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/20201012_replicate-analysis-All-tissues-Mayo-Clinic_steep.html')
 ```
 
 ##### CSS Top Styling
 ```{r CSS Top Styling}
 writeLines("td, th { padding : 3px } th { background-color:white; color:black; border:1px solid black; text-align:center } td {color:black; border:1px solid black; word-wrap:break-word; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; max-width:300px; text-align:left}", con= "../css/style.css")
-
 ```
 
 ## Goals of Analysis
@@ -55,14 +57,13 @@ writeLines("td, th { padding : 3px } th { background-color:white; color:black; b
   + Within Tissues:
     + liver, gastrocnemius, white-adipose, lung, heart, brown-adipose, kidney
 
+## Analysis
+
 ### Setup the Top Environment
 ```{r Setup the Top Environment, message=FALSE, results='hide', warning = FALSE}
 ################################################################################
 ##### Resources and Dependencies ###############################################
 ################################################################################
-
-# To Render the Markdown, run this line in console
-#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201012_pass1a-metabolomics-data-cleanup_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/mayo_clinic/20201012_replicate-analysis-AAll-tissues-Mayo-Clinic_steep.html')
 
 # Set the working directory
 #############################################################################
@@ -186,7 +187,7 @@ countdata_df %>%
   scroll_box(width = "100%", height = "200px")
 ```
 
-### Load, Incorporate, & Display the Phenotype Data
+### Load, Incorporate, & Display Phenotype Data
 ```{r Incorporate Phenotype Data, results='asis'}
 # Load the phenotype data
 pheno_obj <- paste0(WD,"/data/20201021_pass1a-06-pheno-viallabel_steep.rds")
@@ -219,7 +220,7 @@ pheno_df %>%
 ```
 
 ### Visualize the number of samples and number of metabolites across all "named" batches
-```{r Explore Metadata}
+```{r Named Samples and Metabolites Across Sites, Technologies, & Tissues}
 
 # Order of Sites and metab_family
 site_metab_order <- metadata_df %>%
@@ -289,7 +290,7 @@ metadata_df %>%
 ```
 
 ### Explore How Samples were Divided into Batches:
-  + "Samples were divided into batches of ~20 [samples] for analysis"
+  * "Samples were divided into batches of ~20 [samples] for analysis"
 
 ```{r Batches of 20}
 # Assign Variables
@@ -322,8 +323,8 @@ metadata_df %>%
 #   xlim(0,1)
 
 # DEV
-tissue_study_institute_metab_family <- "plasma_Mayo Clinic_ac"
-for(tissue_study_institute_metab_family in tissue_study_institute_metab_families[1]){
+tissue_study_institute_metab_family <- "liver_Mayo Clinic_ac"
+for(tissue_study_institute_metab_family in "liver_Mayo Clinic_ac"){
   # Variables
   tissue <- tissue_study_institute_metab_family %>% 
     str_split(pattern = '_') %>% unlist() %>% head(n=1)
@@ -355,12 +356,16 @@ p <- countdata_df %>%
     left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
     select(STUDY_INSTITUTE_METAB_FAMILY,labelid, viallabel, pid, bid,sample_type,sample_order,raw_file) %>%
     unique() %>%
-    mutate(alt_sample_order = raw_file %>% str_split(pattern = '_') %>% map(tail, 1) %>% unlist()) %>%
-    arrange(raw_file, alt_sample_order)
-  p %>%
-  knitr::kable(format = "html") %>%
-  scroll_box(width = "100%", height = "200px")
+    mutate(alt_sample_order = raw_file %>% str_split(pattern = '_') %>% map(tail, 1) %>% unlist())
 }
+# Print Example of Sample Order
+# p %>%
+#     arrange(sample_order) %>% 
+#     knitr::kable(format = "html") %>%
+#     scroll_box(width = "100%", height = "200px")
+
+p %>%
+    arrange(sample_order)
 
 ```
 
@@ -377,7 +382,7 @@ tissue_study_institute_metab_families <- countdata_df %>%
 
 rep_out_df <- data.frame()
 # DEV
-# tissue_study_institute_metab_family <- "liver_Mayo Clinic_ac"
+# tissue_study_institute_metab_family <- "hippocampus_Mayo Clinic_ac"
 for(tissue_study_institute_metab_family in tissue_study_institute_metab_families){
   # Variables
   tissue <- tissue_study_institute_metab_family %>% 
@@ -405,22 +410,6 @@ sample_join <- countdata_df %>%
   
   # Determine the number of replicates based on viallabel ending
   reps <- countdata_df %>%
-  ungroup() %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
-  unnest(COUNT_DATA) %>%
-  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-    select(viallabel) %>% unlist() %>% as.character() %>% unique() %>%
-    str_sub(-3,-1) %>% unique()
-  
-  if(length(reps) >= 2){
-    # Collect number of
-    #print(paste0('Number of replicates in ',tissue,' ',study_institute_metab_family,': ', length(reps)))
-    #print(paste0('Replicates in ',tissue,' ',study_institute_metab_family,': ', paste(reps, collapse = ' ')))
-  
-    rep_df <- countdata_df %>%
     ungroup() %>%
     unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
     filter(TISSUE == tissue) %>%
@@ -428,30 +417,34 @@ sample_join <- countdata_df %>%
     filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
     unnest(COUNT_DATA) %>%
     filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-    #left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
-    unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-    mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+    select(viallabel) %>% unlist() %>% as.character() %>% unique() %>%
+    str_sub(-3,-1) %>% unique()
+  
+  if(length(reps) == 2){
+    # Collect number of
+    #print(paste0('Number of replicates in ',tissue,' ',study_institute_metab_family,': ', length(reps)))
+    #print(paste0('Replicates in ',tissue,' ',study_institute_metab_family,': ', paste(reps, collapse = ' ')))
+  
+    rep_df <- countdata_df %>%
+      ungroup() %>%
+      unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+      filter(TISSUE == tissue) %>%
+      filter(NAMED == named) %>%
+      filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
+      unnest(COUNT_DATA) %>%
+      filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
+      #left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
+      unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+      mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
                                grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2])) %>%
-    select(REPLICATE,labelid_viallabel, labelid, viallabel, pid, bid, METABOLITE_NAME,VALUE)
-    
-    # rep_summary <- rep_df %>%
-    #   mutate(REPLICATE = factor(REPLICATE)) %>%
-    #   mutate(labelid_viallabel = factor(labelid_viallabel)) %>%
-    #   mutate(labelid = factor(labelid)) %>%
-    #   mutate(viallabel = factor(viallabel)) %>%
-    #   mutate(pid = factor(pid)) %>%
-    #   mutate(bid = factor(bid)) %>%
-    #   mutate(METABOLITE_NAME = factor(METABOLITE_NAME)) %>%
-    #   select(-VALUE) %>% unique()
-    # summary(rep_summary)
-    # rep_df %>% select(labelid) %>% table()
+      select(REPLICATE,labelid_viallabel, labelid, viallabel, pid, bid, METABOLITE_NAME,VALUE)
     
     r1_v <- rep_df %>%
     filter(REPLICATE == reps[1]) %>%
-    select(labelid) %>% unlist() %>% as.character() %>% sort()
+    select(labelid) %>% unlist() %>% as.character() %>% sort() %>% unique()
     r2_v <- rep_df %>%
     filter(REPLICATE == reps[2]) %>%
-    select(labelid) %>% unlist() %>% as.character() %>% sort()
+    select(labelid) %>% unlist() %>% as.character() %>% sort() %>% unique()
     out_df <- data.frame(TISSUE = tissue, 
                STUDY_INSTITUTE = study_institute, 
                METAB_FAMILY = metab_family,
@@ -462,16 +455,182 @@ sample_join <- countdata_df %>%
                SAMPLE_N = length(c(r1_v, r2_v)),
                REP_FREQ = sum(r1_v %in% r2_v)*2/length(c(r1_v, r2_v)))
     rep_out_df <- rbind(rep_out_df, out_df)
-  }
-}
-rep_out_df %>%
-  arrange(desc(REP_N)) %>% 
-  knitr::kable(format = "html") %>%
-  scroll_box(width = "100%", height = "200px")
+  }else if(length(reps) == 3){
+    rep_df <- countdata_df %>%
+      ungroup() %>%
+      unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+      filter(TISSUE == tissue) %>%
+      filter(NAMED == named) %>%
+      filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
+      unnest(COUNT_DATA) %>%
+      filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
+      #left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
+      unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+      mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+                               grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
+                               grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
+      select(REPLICATE,labelid_viallabel, labelid, viallabel, pid, bid, METABOLITE_NAME,VALUE)
+    
+    r1_v <- rep_df %>%
+    filter(REPLICATE == reps[1]) %>%
+    select(labelid) %>% unlist() %>% as.character() %>% sort() %>% unique()
+    r2_v <- rep_df %>%
+    filter(REPLICATE == reps[2]) %>%
+    select(labelid) %>% unlist() %>% as.character() %>% sort() %>% unique()
+    r3_v <- rep_df %>%
+    filter(REPLICATE == reps[3]) %>%
+    select(labelid) %>% unlist() %>% as.character() %>% sort() %>% unique()
+    
+    out_df <- data.frame(TISSUE = tissue, 
+               STUDY_INSTITUTE = study_institute, 
+               METAB_FAMILY = metab_family,
+               NAMED = named,
+               REP_N = length(reps),
+               REPS = paste(reps, collapse = ';'),
+               REP_PAIR_N = NA,
+               SAMPLE_N = length(c(r1_v, r2_v, r3_v)),
+               REP_FREQ = NA)
+    rep_out_df <- rbind(rep_out_df, out_df)
+  }# For loop for rep length
+} # For tissue and platform
+
+rep_out_df
+
+# rep_out_df %>%
+#   arrange(desc(REP_N)) %>% 
+#   knitr::kable(format = "html") %>%
+#   scroll_box(width = "100%", height = "200px")
 ```
 
-##### Subset data to send to Collaborators (Matrices and Dataframes as R Objects)
-```{r Subset Replicate Samples for Jun}
+### Seperate Replicates and Save in Count Data
+```{r Seperate Replicates and Save in Count Data}
+# Variables
+###################
+tissues <- countdata_df$TISSUE %>% unique() %>% as.character()
+metab_families <- countdata_df$METAB_FAMILY %>% unique() %>% as.character()
+
+# Sperate replicate COUNT_DATA from one another
+##########################
+# For each tissue and metabolite family/platform in Mayo:
+# Seperate the reads from replicates and resave in new format
+
+# DEV
+###################
+#tissue <- "hippocampus"
+#mf <- "ac"
+#i <- 1
+
+for(tissue in tissues){
+  for(mf in metab_families){
+    # Collect the replicates
+    reps <- rep_out_df %>%
+      filter(STUDY_INSTITUTE == "Mayo Clinic") %>%
+      filter(TISSUE == tissue) %>%
+      filter(METAB_FAMILY == mf) %>%
+      select(REPS) %>% unlist() %>% as.character() %>%
+      str_split(pattern = ';') %>% unlist()
+    
+    # Next the loop
+    if(is.null(reps)){
+      next
+    }
+    
+    # Subset replicate data (COUNTS)
+    reps_count_df <- countdata_df %>% 
+      filter(STUDY_INSTITUTE == "Mayo Clinic") %>%
+      filter(TISSUE == tissue) %>%
+      filter(METAB_FAMILY == mf) %>%
+      select(-METABOLITE_DATA, -SAMPLE_DATA) %>%
+      unnest(cols = COUNT_DATA) %>%
+      unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+      mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+                               grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
+                               grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
+      split(.$REPLICATE) %>%
+      map(select, -labelid_viallabel, -REPLICATE) %>%
+      map(ungroup)
+    
+    # Subset replicate data (SAMPLE)
+    reps_sample_df <- countdata_df %>% 
+      filter(STUDY_INSTITUTE == "Mayo Clinic") %>%
+      filter(TISSUE == tissue) %>%
+      filter(METAB_FAMILY == mf) %>%
+      select(-METABOLITE_DATA, -COUNT_DATA) %>%
+      unnest(cols = SAMPLE_DATA) %>%
+      #unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+      mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),sample_id) ~ reps[1],
+                               grepl(paste0(reps[2],"$"),sample_id) ~ reps[2],
+                               grepl(paste0(reps[3],"$"),sample_id) ~ reps[3])) %>%
+      split(.$REPLICATE) %>%
+      map(select, -REPLICATE) %>%
+      map(ungroup)
+    
+    # Subset replicate data (METABOLITE_DATA)
+    repdata_df <- countdata_df %>% 
+      filter(STUDY_INSTITUTE == "Mayo Clinic") %>%
+      filter(TISSUE == tissue) %>%
+      filter(METAB_FAMILY == mf) %>%
+      select(-COUNT_DATA, -SAMPLE_DATA)
+    
+    # Sort the reps in order of sample size
+    n_df <- data.frame()
+    for(rp in reps){
+      n <- reps_count_df[[rp]] %>%
+        select(viallabel) %>%
+        unique() %>% nrow()
+      n_df <- rbind(n_df, data.frame(n, rp))
+    }
+    reps <- n_df %>% arrange(desc(n)) %>% select(rp) %>% unlist() %>% as.character()
+    
+    #all_data_df <- data.frame()
+    repdata_list <- list()
+    # Iterate over each replicate and adjust counts and samples dfs
+    for(rp in reps){
+      i <- match(rp, reps)
+      # Counts df
+      reps_count_df[[i]] <- reps_count_df[[i]] %>%
+        #mutate(STUDY_INSTITUTE = paste0('Mayo Clinic Rep ',as.character(i))) %>%
+        group_by(DATASET,TISSUE,METAB_FAMILY,NAMED,STUDY_INSTITUTE,
+             CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE) %>%
+        nest() %>%
+        mutate(COUNT_DATA = data) %>% select(-data) %>%
+        ungroup()
+      
+      # Samples df
+      reps_sample_df[[i]] <- reps_count_df[[i]] %>%
+        #mutate(STUDY_INSTITUTE = paste0('Mayo Clinic Rep ',as.character(i))) %>%
+        group_by(DATASET,TISSUE,METAB_FAMILY,NAMED,STUDY_INSTITUTE,
+             CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE) %>%
+        nest() %>%
+        mutate(SAMPLE_DATA = data) %>% select(-data) %>%
+        ungroup()
+      
+      # Join the dataframes together
+      repdata_list[[i]] <- left_join(repdata_df, reps_count_df[[i]], 
+                              by = c("DATASET","TISSUE","METAB_FAMILY","NAMED",
+                                               "STUDY_INSTITUTE","CH_CHROMATOGRAPHY_TYPE",
+                                               "MS_TYPE","MS_ION_MODE"))
+      repdata_list[[i]] <- left_join(repdata_list[[i]], reps_sample_df[[i]], 
+                              by = c("DATASET","TISSUE","METAB_FAMILY","NAMED",
+                                               "STUDY_INSTITUTE","CH_CHROMATOGRAPHY_TYPE",
+                                               "MS_TYPE","MS_ION_MODE"))
+      # Rename and reorganize
+      repdata_list[[i]] <- repdata_list[[i]] %>%
+        mutate(STUDY_INSTITUTE = paste0('Mayo Clinic Rep ',as.character(i))) %>%
+        select(names(countdata_df))
+      countdata_df <- rbind(countdata_df, repdata_list[[i]])
+    } # Iterate over replicates
+    # Join these data into the master countdata_df
+  } # Iterate over metabolite families
+} # Iterate over tissues
+
+# Replicates
+
+```
+
+
+### Subset Data for Collaborators (Matrices and Dataframes as R Objects)
+```{r Subset Replicates Samples for Collaborators}
 # Assign Variables
 ################################################################################
 tissue_study_institute_metab_reps <- countdata_df %>%
@@ -594,11 +753,13 @@ if(all(x == y)){
 ```
 
 ### Comparison of Samples and Metabolites Between Replicate Pairs (Before and After Normalization)
-#### These analyses are rendered in adjunct HTML files in 20200915_metabolomics-pass1a/reports/mayo_clinic
+#### These analyses are rendered in adjunct HTML files in 20200915_metabolomics-pass1a/reports/mayo_clinic_replicates
 
-<!-- # ```{r Automation: Boxplots and Density Plots to Measure Normalization, echo=TRUE, fig.show='hide', message=TRUE, warning=TRUE, results='hide'} -->
+<!-- # ```{r Automation: Comparison of Samples and Metabolites Between Replicate Pairs, echo=TRUE, fig.show='hide', message=TRUE, warning=TRUE, results='hide'} -->
 
-```{r Automation: Boxplots and Density Plots to Measure Normalization, echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+```{r Automation: Comparison of Samples and Metabolites Between Replicate Pairs, echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+if(F){
+  
 tissue_study_institute_metab_families <- countdata_df %>%
   ungroup() %>%
   filter(STUDY_INSTITUTE == 'Mayo Clinic') %>%
@@ -608,7 +769,8 @@ tissue_study_institute_metab_families <- countdata_df %>%
 
 # DEV
 # tissue_study_institute_metab_family <- "gastrocnemius_Mayo Clinic_amines"
-for(tissue_study_institute_metab_family in tissue_study_institute_metab_families){
+for(tissue_study_institute_metab_family in "gastrocnemius_Mayo Clinic_amines"){
+#for(tissue_study_institute_metab_family in tissue_study_institute_metab_families){
   
   # Variables
   tissue_study_institute_metab_family_out <- tissue_study_institute_metab_family %>% 
@@ -641,7 +803,7 @@ for(tissue_study_institute_metab_family in tissue_study_institute_metab_families
     filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
     select(viallabel) %>% unlist() %>% as.character() %>% unique() %>%
     str_sub(-3,-1) %>% unique()
-  html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/mayo_clinic'
+  html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/mayo_clinic_replicates'
   if((length(reps) == 2) & (tissue %in% c("gastrocnemius","heart","lung","liver","white-adipose"))){
     html_file = paste0("20201012_replicate-analysis-",tissue_study_institute_metab_family_out,'_steep.html')
   rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201012_pass1a-metabolomics-mayo-reps-2_steep.Rmd',
@@ -652,15 +814,19 @@ for(tissue_study_institute_metab_family in tissue_study_institute_metab_families
   }
 }
 print(paste0('Output Files PATH: ', html_dir))
+}
 ```
 
 
-# Inference:
-  + It there are differences in metabolite abundances between the replicates pairs. 
-  + We should consider why these samples were replicated.
+## Closing Thoughts
+  * It there are differences in metabolite abundances between the replicates pairs. 
+  * We should consider why these samples were replicated.
     + Is it safe to assume these replicate pairs should demonstrate similar metabolite abundances and be correlated?
     + Or, were samples replicated for another reason?
 
-
+## Session Info
+```{r Sesh}
+session_info()
+```
 
 

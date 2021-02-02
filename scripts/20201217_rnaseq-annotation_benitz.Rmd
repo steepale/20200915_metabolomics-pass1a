@@ -1,0 +1,268 @@
+---
+title: | 
+ | RNASeq Annotation
+author: "Simone Benitz"
+date: "12/17/2020"
+always_allow_html: true
+output: 
+  html_document:
+    toc: true
+    code_folding: hide
+    highlight: zenburn
+    css: ../css/style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+##### CSS Top Styling
+```{r CSS Top Styling}
+writeLines("td, th { padding : 3px } th { background-color:white; color:black; border:1px solid black; text-align:center } td {color:black; border:1px solid black; word-wrap:break-word; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; max-width:300px; text-align:left}", con= "../css/style.css")
+
+```
+
+## Goals of Analysis
+  + TODO
+
+## Analysis
+
+### Setup the Environment (Top)
+```{r Setup the Environment (Top), message=FALSE, results='hide', warning = FALSE, echo = FALSE}
+################################################################################
+##### Resources and Dependencies ###############################################
+################################################################################
+
+# Set the working directory
+#############################################################################
+COMP <- "MacBook" 
+#COMP <- "GreatLakes"       
+if(COMP == "MacBook"){
+        # MacBook
+        WD <- '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a'    
+}else if(COMP == "GreatLakes"){
+        # MichMed
+        WD <- '/home/acsteep/motrpac/20200915_metabolomics-pass1a'
+}
+
+#setwd(WD)
+
+# Load the dependencies
+#source("https://bioconductor.org/biocLite.R")
+#BiocManager::install("org.Rn.eg.db")
+#install.packages("kableExtra")
+
+# Load dependencies
+pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","kableExtra","DESeq2",
+                "enrichR","ggrepel")
+for(pac in pacs...man){
+  suppressWarnings(suppressPackageStartupMessages(library(pac, character.only = TRUE)))
+}
+
+############################################################
+##### Functions ############################################
+############################################################
+
+# Name functions
+select <- dplyr::select
+counts <- DESeq2::counts
+map <- purrr::map
+desc <- dplyr::desc
+arrange <- dplyr::arrange
+melt <- reshape2::melt
+mutate <- dplyr::mutate
+
+# Global options
+options(dplyr.print_max = 100)
+options(scipen=10000)
+
+```
+
+### Construct Function to Annotate Gene IDs with Gene Symbols (ENSEMBL Annotation)
+```{r Function to Annotate Gene IDs with Gene Symbols}
+# Function to Annotate Gene IDs with Gene Symbols
+###############################################################################################
+# mmusculus_gene_ensembl: Mouse genes (GRCm38.p6)
+GeneID2SymbolMouse <- function(x) {
+        # Ensure 'x' is a data.frame
+        if ( class(x) != 'data.frame' ) {
+                 stop('x must be a data frame', class.= FALSE)
+        }
+        
+        # Load requirements
+        library(biomaRt)
+        library(purrr)
+        library(dplyr)
+        
+        # Load in annotations
+        mart_mm_ens = useMart('ensembl', dataset='mmusculus_gene_ensembl')
+        # Create annotation table
+        # To explore attributes
+        #listAttributes(mart_mm_ens)
+        ann_df <- getBM(attributes = c('ensembl_gene_id', 'mgi_symbol','hgnc_symbol'),
+              values = x$ensembl_gene_id,
+              mart=mart_mm_ens)
+        # Conditionally select a gene symbol
+        ann_df <- ann_df %>% 
+          mutate(gene_symbol = ifelse(hgnc_symbol == '', mgi_symbol, hgnc_symbol)) %>%
+          select(ensembl_gene_id, gene_symbol)
+        # Join the gene_symbol column into the dataframe and output the dataframe
+        left_join(x,ann_df, by = "ensembl_gene_id")
+}
+#########################################################################################
+
+```
+
+### Load the Data
+```{r Load Count Data & MetaData}
+# Load the Data
+################################################################################
+# Files
+countdata_rds <- paste0(WD, '/data/res_Pdx1KwtvsKPdx1ff.rds')
+
+# Load the data
+countdata_s4 <- readRDS(file = countdata_rds)
+
+# Stop the clock
+#proc.time() - ptm
+```
+
+### Count Data
+```{r Count Data Format}
+countdata_s4 %>%
+  head %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Add Gene Symbol Annotation (biomaRt)
+```{r Add Gene Symbol Annotation (biomaRt)}
+# We turn the DESeq S4 object into a dataframe so that we can use our function
+# for more universal applications later
+countdata_df <- countdata_s4 %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "ensembl_gene_id") %>%
+  GeneID2SymbolMouse
+# Then we apply our new annotation back into the DESeq S4 object, based on this recommendation
+# from DESeq's author: https://support.bioconductor.org/p/62374/
+#all(rownames(countdata_s4) == countdata_df$ensembl_gene_id)
+countdata_s4 <- SummarizedExperiment::cbind(countdata_s4, (countdata_df %>% select(gene_symbol)))
+
+# Visualize the DE genes with their new annotation
+countdata_s4 %>%
+  as.data.frame() %>%
+  arrange(padj) %>%
+  filter(log2FoldChange >= 0.5 | log2FoldChange <= -0.5) %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Volcano Plot
+```{r Volcano Plot}
+p <- countdata_s4 %>%
+  as.data.frame()  %>% 
+  arrange(padj) %>%
+  mutate(LABEL = ifelse(-log10(padj) > 14, gene_symbol, '')) %>%
+  ggplot(aes(log2FoldChange, -log10(padj))) +
+  geom_point(alpha = 0.2) +
+  geom_text_repel(aes(label = LABEL)) +
+  geom_hline(yintercept = -log2(0.05), linetype='dashed') +
+  geom_vline(xintercept = 0.5, linetype='dashed') +
+  geom_vline(xintercept = -0.5, linetype='dashed') +
+  ggtitle('DE Genes: Adjusted p-value <= 0.05; |Log2FC| >= 0.5') +
+  ylab(bquote('-'~Log[10]~ 'Adjusted p-value (Bonferroni)'))
+plot(p)
+```
+
+### Histogram of p-values
+```{r Histogram of p-values}
+# Generate an accompanying pvalue histogram
+p <- countdata_s4 %>%
+  as.data.frame() %>%
+    ggplot(aes(x = padj)) +
+    geom_histogram(bins = 200) +
+    #geom_freqpoly() +
+    ggtitle('DE Genes (adjusted p-value <= 0.05)') +
+    #geom_dotplot(aes(x = padj), dotsize = 0.5, alpha = 0.5) +
+    geom_vline(xintercept = 0.05, linetype='dashed') +
+    xlab('Adjusted p-value (Bonferroni)') +
+    ylab('Gene Count') +
+    theme_bw()
+plot(p)
+```
+
+### Pathway Analysis Barplot
+```{r Pathway Analysis BarPlot}
+################################################################################
+#####     Enrichr: EDA       ###################################################
+################################################################################
+
+# Variables
+############################
+
+# Subset for DE genes
+df <- countdata_s4 %>%
+  as.data.frame() %>%
+  arrange(padj) %>%
+  filter(log2FoldChange >= 0.5 | log2FoldChange <= -0.5)
+# Collect gene symbols
+symbols <- df %>%
+        filter(!gene_symbol == '') %>%
+        select(gene_symbol) %>% unlist() %>% unique() %>% as.character()
+# Collect the desired pathways to query for enrichment
+desired <- c("KEGG_2019_Mouse", "GO_Biological_Process_2018", "GO_Molecular_Function_2018")
+enriched <- enrichr(symbols, desired)
+n<-1
+enrichr_df <- data.frame()
+db <- desired[1]
+for(db in desired){
+        # Collapse the data into flat format
+        if(!is.null(nrow(enriched[[db]]))){
+                enriched[[n]]$Data.Base <- db
+                enrichr_df <- rbind(enrichr_df,enriched[[n]])
+        }
+        n <- n + 1
+}
+# Generate a new column for the number of genes per enriched term
+if(nrow(enrichr_df) > 0){
+        enrichr_df  <- enrichr_df %>% separate(Overlap, sep = '/', into = c('Overlap.N','Total.N'))
+        enrichr_df$FDR_nlog <- -log(enrichr_df$Adjusted.P.value)
+        # Filter the results
+        enrichr_plot <- enrichr_df %>%
+                filter(Total.N <= 500) %>%
+                filter(Total.N >= 10) %>%
+                #filter(Adjusted.P.value <= 0.05) %>%
+                filter(P.value <= 0.05) %>%
+                arrange(desc(FDR_nlog)) %>%
+                dplyr::slice(1:40) %>%
+                group_by(Term) %>%
+                arrange(FDR_nlog) %>%
+                ungroup()
+
+        # Create a special column that will allow for proper ordering of Pathways in Plot:
+        # Ordering will have 2 priorities in this order: Up/Down regulation & -Log(FDR)
+        # Visualize results with barplot
+        #pdf(paste0(WD,'/plots/20200426_rnaseq-',TIS,'-pathways-sexmod-C0vsC7_steep.pdf'),
+        #    width = 12, height = 6)
+        p <- ggplot(enrichr_plot, 
+                    aes(x=reorder(Term, FDR_nlog), y=FDR_nlog)) +
+                geom_bar(stat='identity') +
+                coord_flip() +
+                ylab('-Log(FDR)') +
+                xlab('') +
+                theme_linedraw() +
+                guides(fill=guide_legend(title='Gene Expression')) +
+                theme(panel.background = element_blank(),
+                      plot.background = element_blank(),
+                      strip.background = element_blank(),
+                      axis.text = element_text(size=12, colour = 'black'),
+                      axis.ticks = element_line(colour = 'black'),
+                      axis.title=element_text(size=12,face='bold'),
+                      strip.text = element_blank()) +
+                theme(panel.grid.major = element_blank())
+        plot(p)
+}
+```

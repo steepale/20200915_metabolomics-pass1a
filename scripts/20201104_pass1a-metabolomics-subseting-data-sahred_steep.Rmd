@@ -1,0 +1,224 @@
+
+### Saving files for Jun
+
+```{r }
+
+# Provide file annotation
+sample_annotation <- pheno_df %>%
+  filter(labelid %in% shared_sams) %>%
+  select(labelid, Key.anirandgroup, Registration.sex) %>%
+  unique() %>%
+  mutate(labelid = factor(labelid, levels = shared_sams)) %>%
+  arrange(labelid)
+file_name <- paste0(WD,'/data/20201104_bh-umrppos-gastroc-sample-annotation_steep.txt')
+write.table(sample_annotation, file = file_name, sep = '\t', quote = F, row.names = F)
+
+# Save the PxP Matrix
+row.names(cor1) <- met_order
+colnames(cor1) <- met_order
+cor1 <- cor1[met_order,met_order]
+file_name <- paste0(WD,'/data/20201104_bh-umrppos-gastroc-pxp-cross-mtx_steep.rds')
+saveRDS(cor1, file_name)
+# Save the PxP Matrix row order
+file_name <- paste0(WD,'/data/20201104_bh-umrppos-gastroc-pxp-cross-row-order_steep.rds')
+saveRDS(rownames(cor1), file_name)
+# Save the PxP Matrix Column order
+file_name <- paste0(WD,'/data/20201104_bh-umrppos-gastroc-pxp-cross-col-order_steep.rds')
+saveRDS(colnames(cor1), file_name)
+# Save the Broad hilic positive NxP Matrix (with same order)
+nxp_bh_mat <- countdata_df %>%
+    ungroup() %>%
+    filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY == "Broad Institute_hilicpos") %>%
+        unnest(COUNT_DATA) %>%
+  filter(labelid %in% shared_sams) %>%
+  filter(METABOLITE_NAME %in% shared_mets) %>%
+  filter(METABOLITE_NAME %!in% met_rm) %>%
+  select(METABOLITE_NAME,labelid, VALUE) %>%
+  pivot_wider(names_from = METABOLITE_NAME, 
+      values_from = VALUE) %>%
+  tibble::column_to_rownames(var = "labelid") %>%
+  as.matrix() %>%
+  AutoScaleMatrix()
+met_order <- rownames(cor1) %>% str_split(pattern = '_B') %>%
+  map(head, n= 1) %>%
+  unlist()
+nxp_bh_mat <- nxp_bh_mat[shared_sams, met_order]
+file_name <- paste0(WD,'/data/20201104_bh-gastroc-nxp_steep.rds')
+saveRDS(nxp_bh_mat, file_name)
+
+# Save the Broad hilic pos PxP identity matrix
+Corr <- 'Spearman'
+# Create an NxN Matrix of correlation
+if(Corr == 'Pearson'){
+        cor2 <- stats::cor(nxp_bh_mat, method = 'pearson') %>% round(digits = 3)
+}else if(Corr == 'Spearman'){
+        cor2 <- stats::cor(nxp_bh_mat, method = 'spearman') %>% round(digits = 3)
+}
+cor2 <- cor2[met_order,met_order]
+file_name <- paste0(WD,'/data/20201104_bh-gastroc-pxp_steep.rds')
+saveRDS(cor2, file_name)
+
+# Save the UM rp positive NxP Matrix (with same order)
+nxp_umrppos_mat <- countdata_df %>%
+    ungroup() %>%
+    filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY == "University of Michigan_rppos") %>%
+        unnest(COUNT_DATA) %>%
+  filter(labelid %in% shared_sams) %>%
+  filter(METABOLITE_NAME %in% shared_mets) %>%
+  filter(METABOLITE_NAME %!in% met_rm) %>%
+  select(METABOLITE_NAME,labelid, VALUE) %>%
+  pivot_wider(names_from = METABOLITE_NAME, 
+      values_from = VALUE) %>%
+  tibble::column_to_rownames(var = "labelid") %>%
+  as.matrix() %>%
+  AutoScaleMatrix()
+nxp_umrppos_mat <- nxp_umrppos_mat[shared_sams, met_order]
+file_name <- paste0(WD,'/data/20201104_umrppos-gastroc-nxp_steep.rds')
+saveRDS(nxp_umrppos_mat, file_name)
+
+# Save the UM rp hilic pos PxP identity matrix
+Corr <- 'Spearman'
+# Create an NxN Matrix of correlation
+if(Corr == 'Pearson'){
+        cor2 <- stats::cor(nxp_umrppos_mat, method = 'pearson') %>% round(digits = 3)
+}else if(Corr == 'Spearman'){
+        cor2 <- stats::cor(nxp_umrppos_mat, method = 'spearman') %>% round(digits = 3)
+}
+cor2 <- cor2[met_order,met_order]
+file_name <- paste0(WD,'/data/20201104_umrppos-gastroc-pxp_steep.rds')
+saveRDS(cor2, file_name)
+
+tissues <- countdata_df %>%
+    ungroup() %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY == "University of Michigan_rppos") %>%
+  select(TISSUE) %>% unlist() %>% as.character()
+# Provide 18 matrices for Jun
+#################
+shared_runs <- "Broad Institute_hilicpos;University of Michigan_rppos" %>% str_split(';') %>% unlist()
+site <- shared_runs[1]
+i <- 1
+all_samples <- c()
+for(site in shared_runs){
+  print(site)
+  for(tissue in tissues){
+    x_mat <- countdata_df %>%
+    ungroup() %>%
+    filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY == site) %>%
+        unnest(COUNT_DATA) %>%
+  select(METABOLITE_NAME,pid, VALUE) %>%
+      filter(!is.na(pid)) %>%
+      arrange(METABOLITE_NAME) %>%
+  pivot_wider(names_from = METABOLITE_NAME, 
+      values_from = VALUE) %>%
+  arrange(pid) %>%
+  tibble::column_to_rownames(var = "pid") %>%
+  as.matrix() %>%
+      AutoScaleMatrix()
+  # Sample annotation
+  sample_annotation <- pheno_df %>%
+    filter(pid %in% row.names(x_mat)) %>%
+    mutate(pid = factor(pid, levels = row.names(x_mat))) %>%
+    arrange(pid) %>%
+    select(pid, Key.anirandgroup, Registration.sex) %>%
+    unique()
+  
+    print(tissue)
+    #x_mat[1:6,1:6] %>% print()
+    print(i)
+    i <- i + 1
+    site_out <- site %>% str_remove_all(' ') %>% tolower()
+    tissue_out <- tissue %>% str_remove_all(' ') %>% tolower()
+  file_name <- paste0(WD,'/data/20201104_',site_out,'-',tissue_out,'-nxp-autoscaled_steep.rds')
+  saveRDS(x_mat, file_name)
+  print(file_name)
+  file_name <- paste0(WD,'/data/20201104_',site_out,'-',tissue_out,'-sample-annotation_steep.txt')
+#saveRDS(sample_annotation, file_name)
+  write.table(sample_annotation, file = file_name, sep = '\t', quote = F, row.names = F)
+  all_samples <- c(all_samples, row.names( x_mat ))
+  }
+}
+
+i <- 1
+tissue <- 'brown-adipose'
+site <- shared_runs[1]
+name_list <- list()
+for(site in shared_runs[1]){
+  print(site)
+  for(tissue in tissues[1]){
+  print(tissue)
+    site_out <- site %>% str_remove_all(' ') %>% tolower()
+    tissue_out <- tissue %>% str_remove_all(' ') %>% tolower()
+    file_name <- paste0(WD,'/data/20201104_',site_out,'-',tissue_out,'-nxp-autoscaled_steep.rds')
+    mat <- readRDS(file_name)
+    file_name2 <- paste0(WD,'/data/20201104_',site_out,'-',tissue_out,'-nxp-raw_steep.rds')
+    mat2 <- readRDS(file_name2)
+    
+    df <- data.frame(x = mat[,55], y = mat2[,55])
+    #names(df)[1] <- colnames(mat)[1]
+    df %>%
+      ggplot(aes(x,y)) +
+      geom_point() +
+      ggtitle(colnames(mat)[55])
+    
+    all(rownames(mat) == rownames(mat2)) %>% print()
+    name_list[[i]] <- row.names(mat)
+    i <- i + 1
+  }
+}
+
+a <- name_list[[1]]
+b <- name_list[[2]]
+c <- name_list[[3]]
+d <- name_list[[4]]
+e <- name_list[[5]]
+f <- name_list[[6]]
+g <- name_list[[7]]
+h <- name_list[[8]]
+i <- name_list[[9]]
+j <- name_list[[10]]
+k <- name_list[[11]]
+l <- name_list[[12]]
+m <- name_list[[13]]
+n <- name_list[[14]]
+o <- name_list[[15]]
+p <- name_list[[16]]
+q <- name_list[[17]]
+r <- name_list[[18]]
+all(a == b, a==c, a==d, a==e, a==f, a==g, a==h, a==i, a==j,
+    a==k,a==l,a==m,a==n,a==o,a==p,a==q,a==r)
+
+
+
+rs <- c()
+cs <- c()
+for(tissue in tissues){
+ data_dir <- "/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/data/site_comparisons/broad-institute-hilicpos_university-of-michigan-rppos"
+  r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-rows_steep.rds")
+  c_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-cols_steep.rds")
+  r <- readRDS(file = r_file) 
+  c <- readRDS(file = c_file) 
+  rs <- c(rs,r)
+  cs <- c(cs,c)
+}
+
+master_rows <- table(rs)[table(rs) == 9] %>% names()
+master_cols <- table(cs)[table(cs) == 9] %>% names()
+r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-master-mxm-rows_steep.rds")
+c_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-master-mxm-cols_steep.rds")
+saveRDS(master_rows, file = r_file) 
+saveRDS(master_cols, file = c_file) 
+
+
+
+```

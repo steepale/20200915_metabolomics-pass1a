@@ -1,13 +1,16 @@
 ---
-title: "20201103_pass1a-metabolomics-site-specific-eda_steep"
-author: "Steep"
+title: | 
+ | PASS1A (Rat) Metabolomics: 
+ | Site-Comparisons EDA
+author: "Alec Steep"
 date: "11/03/2020"
 always_allow_html: true
 output: 
-  github_document:
+  html_document:
     toc: true
-    #code_folding: hide
-    #highlight: zenburn
+    code_folding: hide
+    highlight: zenburn
+    css: ../css/style.css
 ---
 
 ```{r setup, include=FALSE}
@@ -15,13 +18,24 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 knitr::opts_chunk$set(cache = FALSE)
+
+# To Render the Markdown, run this line in console
+#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201103_pass1a-metabolomics-site-specific-eda_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/20201103_pass1a-metabolomics-site-specific-eda_steep.html', quiet = TRUE, clean = TRUE)
+```
+
+##### CSS Top Styling
+```{r CSS Top Styling}
+writeLines("td, th { padding : 3px } th { background-color:white; color:black; border:1px solid black; text-align:center } td {color:black; border:1px solid black; word-wrap:break-word; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; max-width:300px; text-align:left}", con= "../css/style.css")
+
 ```
 
 ## Goals of Analysis
--Visualize the Data Structure of Metabolomics Data
+  + Systematically compare shared metabolites and samples across CAS sites
 
-## Setup the Environment
-```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE, echo = FALSE}
+## Analysis
+
+### Setup the Environment (Top)
+```{r Setup the Environment (Top), message=FALSE, results='hide', warning = FALSE, echo = FALSE}
 ################################################################################
 ##### Resources and Dependencies ###############################################
 ################################################################################
@@ -37,6 +51,7 @@ if(COMP == "MacBook"){
         # MichMed
         WD <- '/home/acsteep/motrpac/20200915_metabolomics-pass1a'
 }
+rm(COMP)
 
 #setwd(WD)
 
@@ -47,9 +62,11 @@ if(COMP == "MacBook"){
 
 # Load dependencies
 pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","sfsmisc",
-                "pheatmap","caret","ggforce","RANN","kableExtra","gtools","combinat")
-lapply(pacs...man, FUN = function(X) {
-        do.call("library", list(X)) })
+                "pheatmap","caret","ggforce","RANN","kableExtra","gtools","combinat",
+                "ggrepel","VIM","mice")
+for(pac in pacs...man){
+  suppressWarnings(suppressPackageStartupMessages(library(pac, character.only = TRUE)))
+}
 
 ############################################################
 ##### Functions ############################################
@@ -97,58 +114,14 @@ source(paste0(WD,'/functions/PowerMatrix.R'))
 
 ```
 
-
-# Set Variables
-```{r Set Variables}
-
-################################################################################
-####################### Set Variables ##########################################
-################################################################################
-
-# Should shared metabolites and samples be calculated?
-###################################
-COLLECT_SHARED <- FALSE
-
-# Dataset
-###################################
-dataset <- 'targeted'
-
-# Named
-###################################
-named <- 'named'
-
-# Tissue
-###################################
-tissue <- 'liver'
-
-# Metabolite family
-###################################
-metab_family <- 'hilicpos'
-
-# Transformation Technique
-###################################
-# Original Data
-Untransformed <- 'COUNT_DATA'
-
-# Correlation
-###################################
-Corr <- 'Pearson'
-Corr <- 'Spearman'
-
-
-```
-
-# Load the Metadata and Count Data
-```{r Load MetaData}
+### Load the Data
+```{r Load Count Data & MetaData}
 # Load the Data
 ################################################################################
 # Files
 metadata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-metadata-table_steep.rds')
 # Load Data
 metadata_df <- readRDS(file = metadata_rds)
-
-metadata_df %>%
-  head(n =2) %>% kbl() %>% kable_styling()
 
 # Start the clock
 ptm <- proc.time()
@@ -163,17 +136,44 @@ ptm <- proc.time()
 # ac takes 2 seconds
 # hilicpos takes 453 seconds (on MB) or 260 seconds (on GL with 40 MB 2 cores)
 # All data (original + autoscaled) takes 170 seconds on MB
+countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested-backup_steep.rds')
 countdata_rds <- paste0(WD, '/data/20201010_pass1a-metabolomics-countdata-nested_steep.rds')
 
 # Load the data
 countdata_df <- readRDS(file = countdata_rds)
 
+major_df <- countdata_df %>%
+  #head() %>%
+  select(-COUNT_DATA, -SAMPLE_DATA, -METABOLITE_DATA)
+
 # Stop the clock
-proc.time() - ptm
+#proc.time() - ptm
 ```
 
-# Load & Incorporate the Phenotype Data
-```{r Incorporate Phenotype Data}
+```{r}
+major_df %>%
+  filter(NAMED == 'named')
+```
+
+
+### Metadata
+```{r Metadata Format}
+metadata_df %>%
+  head %>% 
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Count Data
+```{r Count Data Format}
+countdata_df %>%
+  head %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Load, Incorporate, & Display Phenotype Data
+```{r Incorporate Phenotype Data, results='asis'}
 # Load the phenotype data
 pheno_obj <- paste0(WD,"/data/20201021_pass1a-06-pheno-viallabel_steep.rds")
 pheno_df <- readRDS(pheno_obj)
@@ -199,13 +199,252 @@ ec_colors <- c('gold',
                'steelblue4')
 
 pheno_df %>%
-  head(n =2) %>% kbl() %>% kable_styling()
+  head(n = 20) %>% 
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+### Select/Create Metabolite Sets
+```{r Select/Create Metabolite Sets}
+# DEV
+################
+# mf <- 'ac'
+
+# Variables
+################
+# Collect the name of gene sets
+targeted_mf <- c('ac','amines','cer','tca','3hib','aa','ka','sphm','acoa','nuc','baiba','oa')
+
+# Iterate through the count data and collect the refmet metabolite names in each set
+trgt_met_set <- list()
+for(mf in targeted_mf){
+  #print(mf)
+trgt_met_set[[mf]] <- countdata_df %>%
+  filter(METAB_FAMILY == mf) %>%
+  select(METABOLITE_DATA) %>%
+  unnest(METABOLITE_DATA) %>%
+  select(refmet_name) %>% unlist() %>% as.character() %>% unique() %>% sort()
+}
+
+all_met_df <- data.frame()
+for(mf in targeted_mf){
+  #print(mf)
+  for(met in trgt_met_set[[mf]]){
+    #res <- lapply(trgt_met_set, function(ch) grep(met, ch))
+    res <- lapply(trgt_met_set, function(st) any(met %in% st))
+    # which vectors contain a search term
+    length(res)
+    ch_tf <- sapply(res, function(x) isTRUE(x))
+    sets <- names(ch_tf[ch_tf])
+    if(length(sets) > 0){
+      met_df <- data.frame(met,paste0(sets, collapse = ' '))
+    all_met_df <- rbind(all_met_df, met_df)
+    }
+  }
+}
+
+names(all_met_df) <- c('METABOLITE_NAME','METABOLITE_SET')
+# Collect the metabolites in multiple gene sets
+dup_mets <- table(all_met_df$met) %>% sort()
+dup_mets <- names(dup_mets[dup_mets > 1])
+
+# One hot enccode variables
+all_met_df <- all_met_df %>%
+  mutate(ThreeHIB = ifelse(grepl("\\<3hib\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Amino_Acids = ifelse(grepl("\\<aa\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Acylcarnitines = ifelse(grepl("\\<ac\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Acyl_CoAs = ifelse(grepl("\\<acoa\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Amines = ifelse(grepl("\\<amines\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(BAIBA = ifelse(grepl("\\<baiba\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Ceramides = ifelse(grepl("\\<cer\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Keto_Acids = ifelse(grepl("\\<ka\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Nucleotides = ifelse(grepl("\\<nuc\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Organic_Acids = ifelse(grepl("\\<oa\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(Sphingomyelins = ifelse(grepl("\\<sphm\\>", METABOLITE_SET), '1', '0')) %>%
+  mutate(TCA = ifelse(grepl("\\<tca\\>", METABOLITE_SET), '1', '0'))
+
+all_met_df
 
 ```
 
-# Collect the Shared Metabolites and Samples
-```{r Collect Shared Metabolites and Samples}
+### Quantify of Samples and Metabolites Across "Named" Batches
+```{r Named Samples and Metabolites Across Sites, Technologies, & Tissues}
 
+# Order of Sites and metab_family
+site_metab_order <- metadata_df %>%
+  unite(STUDY_INSTITUTE, METAB_FAMILY, col = "SITE_METAB") %>%
+  select(TISSUE,SITE_METAB,SAMPLE_N,QC_IS_N,QC_PRERUN_N,QC_BLANK_N,
+          QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N,METABOLITE_N) %>%
+  group_by(SITE_METAB) %>%
+  select(SITE_METAB,SAMPLE_N) %>%
+  mutate(SAMPLE_SUM = sum(SAMPLE_N)) %>%
+  select(SITE_METAB, SAMPLE_SUM) %>%
+  arrange(desc(SAMPLE_SUM)) %>% unique() %>%
+  select(SITE_METAB) %>% unlist() %>% as.character() %>% unique()
+
+# Order of tissues
+tissue_order <- metadata_df %>%
+  unite(STUDY_INSTITUTE, METAB_FAMILY, col = "SITE_METAB") %>%
+  select(TISSUE,SITE_METAB,SAMPLE_N,QC_IS_N,QC_PRERUN_N,QC_BLANK_N,
+          QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N,METABOLITE_N) %>%
+  group_by(TISSUE) %>%
+  mutate(SAMPLE_SUM = sum(SAMPLE_N)) %>%
+  select(TISSUE, SAMPLE_SUM) %>%
+  arrange(desc(SAMPLE_SUM)) %>% unique() %>%
+  select(TISSUE) %>% unlist() %>% as.character() %>% unique() %>% rev()
+  
+#Get a linear ordered count of Ns and Ps for excel plot
+################################################################################
+df <- metadata_df %>%
+  select(DATASET,NAMED,TISSUE,STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE,METAB_FAMILY,SAMPLE_N, METABOLITE_N) %>%
+  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY")
+
+# Collect order of factors for variables
+tissue_levels <- df$TISSUE %>% table() %>% sort() %>% rev() %>% names()
+dataset_levels <- df$DATASET %>% table() %>% sort() %>% names() %>% rev()
+institute_levels <- df$STUDY_INSTITUTE %>% table() %>% sort() %>% rev() %>% names()
+technology_levels <- df$TECHNOLOGY %>% table() %>% sort() %>% rev() %>% names()
+metab_family_levels <- df$METAB_FAMILY %>% table() %>% sort() %>% rev() %>% names()
+named_levels <- df$NAMED %>% table() %>% sort() %>% rev() %>% names()
+# Arrange dataframe
+df <- df %>%
+  mutate(DATASET = factor(DATASET, levels = dataset_levels)) %>%
+  mutate(NAMED = factor(NAMED, levels = named_levels)) %>%
+  mutate(TISSUE = factor(TISSUE, levels = tissue_levels)) %>%
+  mutate(STUDY_INSTITUTE = factor(STUDY_INSTITUTE, levels = institute_levels)) %>%
+  mutate(TECHNOLOGY = factor(TECHNOLOGY, levels = technology_levels)) %>%
+  mutate(METAB_FAMILY = factor(METAB_FAMILY, levels = metab_family_levels)) %>%
+  mutate(SAMPLE_N = factor(SAMPLE_N)) %>%
+  mutate(METABOLITE_N = factor(METABOLITE_N)) %>%
+  arrange(TISSUE,DATASET,STUDY_INSTITUTE,TECHNOLOGY,METAB_FAMILY,NAMED)
+df$ORDER <- row.names(df) %>% as.numeric()
+
+df %>% select(TISSUE,DATASET,STUDY_INSTITUTE,TECHNOLOGY,METAB_FAMILY,NAMED,
+              SAMPLE_N, METABOLITE_N)
+ df %>% 
+   filter(NAMED == 'named') %>%
+   select(SAMPLE_N, METABOLITE_N)
+################################################################################
+
+metadata_df %>%
+  mutate(TISSUE = factor(TISSUE, levels = tissue_order)) %>%
+  select(TISSUE,DATASET,STUDY_INSTITUTE,CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE,METAB_FAMILY,
+         NAMED,SAMPLE_N, METABOLITE_N) %>%
+  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
+  arrange(desc(TISSUE), desc(DATASET), desc(STUDY_INSTITUTE),
+          desc(TECHNOLOGY), desc(METAB_FAMILY), desc(NAMED)) %>%
+  select(METAB_FAMILY,SAMPLE_N, METABOLITE_N)
+
+# Create a plot of sample number by tissue and technology
+metadata_df %>%
+  unite(STUDY_INSTITUTE, METAB_FAMILY, col = "SITE_METAB") %>%
+  select(TISSUE,SITE_METAB,SAMPLE_N,QC_IS_N,QC_PRERUN_N,QC_BLANK_N,
+          QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N,METABOLITE_N) %>%
+  mutate(TISSUE = factor(TISSUE, levels = tissue_order)) %>%
+  mutate(SITE_METAB = factor(SITE_METAB, levels = site_metab_order)) %>%
+  ggplot(aes(SITE_METAB,TISSUE)) +
+    geom_tile(aes(fill = SAMPLE_N)) + 
+    geom_text(aes(label = SAMPLE_N)) +
+    scale_fill_gradient(low = "white", high = "red") +
+  ggtitle("Samples Across Named Runs") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.title.x = element_blank(),
+  axis.title.y = element_blank()) +
+  theme(legend.position = "none") +
+  scale_x_discrete(position = "top") +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0.9))
+
+
+# METABOLITE_NAMED_N
+# Create a plot of sample number by tissue and technology
+metadata_df %>%
+  unite(STUDY_INSTITUTE, METAB_FAMILY, col = "SITE_METAB") %>%
+  select(TISSUE,NAMED,SITE_METAB,SAMPLE_N,QC_IS_N,QC_PRERUN_N,QC_BLANK_N,
+          QC_POOLED_N,QC_REFERENCE_N,QC_DRIFT_N,METABOLITE_N) %>%
+  mutate(TISSUE = factor(TISSUE, levels = tissue_order)) %>%
+  mutate(SITE_METAB = factor(SITE_METAB, levels = site_metab_order)) %>%
+  filter(NAMED == 'named') %>%
+  mutate(METABOLITE_NAMED_N = 0) %>%
+  mutate(METABOLITE_NAMED_N = ifelse(NAMED == 'named', METABOLITE_N, METABOLITE_NAMED_N)) %>%
+  ggplot(aes(SITE_METAB,TISSUE)) +
+    geom_tile(aes(fill = METABOLITE_NAMED_N)) + 
+    geom_text(aes(label = METABOLITE_NAMED_N)) +
+    scale_fill_gradient(low = "white", high = "red") +
+  ggtitle("Named Metabolites Across Runs") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.title.x = element_blank(),
+  axis.title.y = element_blank()) +
+  theme(legend.position = "none") +
+  scale_x_discrete(position = "top") +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0.9))
+
+```
+
+### Remove Features and Impute Feature Values in Named Datasets
+```{r Remove Features and Impute Feature Values in Named Datasets}
+if(F){
+# Variables
+##################
+nameddata_df <- countdata_df %>% filter(NAMED == 'named')
+na_rows <- c()
+
+
+# DEV
+##################
+# 3
+shared_runs
+nameddata2_df <- nameddata_df %>%
+    ungroup() %>%
+    #filter(TISSUE == tissue) %>%
+    filter(NAMED == named) %>%
+    unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
+    filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
+#na_rows2 <- na_rows
+
+nameddata3_df <- nameddata2_df %>%
+  filter(STUDY_INSTITUTE_METAB_FAMILY == 'University of Michigan_rppos')
+
+
+#rn <- 8
+# Iterate through datasets and perform analyses to each dataset
+for(rn in 1:nrow(nameddata3_df)){
+  # The data
+  dataset_df <- nameddata3_df[rn,] %>%
+    select(-SAMPLE_DATA,-METABOLITE_DATA) %>%
+    unnest(cols = COUNT_DATA)
+  # Site
+  site <- dataset_df$STUDY_INSTITUTE %>% unique()
+  
+  # descriptor
+  descriptor <- paste( unique(dataset_df$STUDY_INSTITUTE),
+                       unique(dataset_df$TISSUE),
+                       unique(dataset_df$METAB_FAMILY),
+                       unique(dataset_df$CH_CHROMATOGRAPHY_TYPE),
+                      unique(dataset_df$MS_TYPE),
+                      unique(dataset_df$MS_ION_MODE),
+                      unique(dataset_df$NAMED),unique(dataset_df$DATASET), sep = '-' ) %>%
+    str_remove_all(' ')
+  print(descriptor)
+  # Render the Primary Analysis
+  ##########################################################################
+  html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/dataset_cleanup'
+  html_file = paste0("20201103_named-site-cleanup-",descriptor,'_steep.html')
+  rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201103_pass1a-metabolomics-site-specific-cleanup_steep.Rmd',
+  output_format = "html_document",
+  output_file = html_file,
+  output_dir = html_dir, 
+  quiet = TRUE,
+  clean = TRUE) 
+  
+}
+
+
+}
+```
+
+### Collect the Shared Metabolites and Samples
+```{r Collect Shared Metabolites and Samples}
+if(F){
 # Create a metadata table elongated to labelid (just the major metadata variables) from the count data df
 meta_labelid_df <- countdata_df %>%
         ungroup() %>%
@@ -242,92 +481,99 @@ df_shared_sites <- data.frame()
 #combo <- c("Broad Institute_hilicpos", "University of Michigan_rppos")
 #combo <- cas_combos[4]
 #tis <- 'cortex'
-for(shared_n in 2:4){
-  print(shared_n)
-  # Collect all the different combinations
-  cas_combos <- combn(cas_sites, shared_n, simplify = F)
-  for(combo in cas_combos){
-    combo <- str_split(combo,', ') %>% unlist()
-    for(tis in tissue_order){
-      print(tis)
-      # Shared metabolites (per tissue) across Institutes
-    all_mets <- countdata_df %>%
-      filter(TISSUE == tis) %>%
-      filter(NAMED == named) %>%
-      select(-COUNT_DATA, -'SAMPLE_DATA') %>%
-      unnest(cols = 'METABOLITE_DATA') %>%
-      filter(!is.na(refmet_name)) %>%
-      select(refmet_name, STUDY_INSTITUTE) %>%
-      filter(STUDY_INSTITUTE %in% combo) %>%
-      unique() %>%
-      group_by(refmet_name) %>%
-      dplyr::mutate(SHARED_SITE_METABOLITE_N = n()) %>%
-      #arrange(desc(SHARED_SITE_METABOLITE_N)) %>%
-      filter(SHARED_SITE_METABOLITE_N >= shared_n) %>%
-      ungroup() %>%
-      select(refmet_name) %>% unlist() %>% as.character() %>% unique()
-      # Shared samples (per tissue) across Institutes
-    if(length(all_mets) > 0){
-    all_sams <- countdata_df %>%
-      filter(TISSUE == tis) %>%
-      filter(NAMED == named) %>%
-      select(-SAMPLE_DATA, -METABOLITE_DATA) %>%
-      unnest(cols = 'COUNT_DATA') %>%
-      select(labelid, STUDY_INSTITUTE) %>%
-      filter(STUDY_INSTITUTE %in% combo) %>%
-      filter(!is.na(labelid)) %>%
-      unique() %>%
-      group_by(labelid) %>%
-      dplyr::mutate(SHARED_SITE_SAMPLE_N = n()) %>%
-      #arrange(desc(SHARED_SITE_SAMPLE_N)) %>%
-      filter(SHARED_SITE_SAMPLE_N >= shared_n) %>%
-      ungroup() %>%
-      select(labelid) %>% unlist() %>% as.character() %>% unique()
-    # Create a dataframe for output
-    df <- data.frame("TISSUE" = tis, "CAS_N" = shared_n, "METABOLITES_N_CAS" = length(all_mets),
-                     "SAMPLES_N_CAS" = length(all_sams),
-                 "CAS_SITES" = paste(combo, collapse = ';'),
-                 "METABOLITES_CAS" = paste(all_mets, collapse = ';'),
-                 "SAMPLES_CAS" = paste0(all_sams, collapse = ';'))
-    df_shared_sites <- rbind(df_shared_sites,df)
-    }
-  }
-  }
-}
-
-# Clean the final df
-df_shared_sites <- df_shared_sites %>%
-  filter(METABOLITES_N_CAS > 0) %>%
-  mutate(TISSUE = factor(TISSUE, levels = tissue_order)) %>%
-  arrange(TISSUE, desc(CAS_N), desc(METABOLITES_N_CAS)) %>%
-  unique()
-
-# Shared Runs
-################################################################################
+# for(shared_n in 2:3){
+#   print(shared_n)
+#   # Collect all the different combinations
+#   cas_combos <- combn(cas_sites, shared_n, simplify = F)
+#   for(combo in cas_combos){
+#     combo <- str_split(combo,', ') %>% unlist()
+#     for(tis in tissue_order){
+#       print(tis)
+#       # Shared metabolites (per tissue) across Institutes
+#     all_mets <- countdata_df %>%
+#       filter(TISSUE == tis) %>%
+#       filter(NAMED == named) %>%
+#       select(-COUNT_DATA, -'SAMPLE_DATA') %>%
+#       unnest(cols = 'METABOLITE_DATA') %>%
+#       filter(!is.na(refmet_name)) %>%
+#       select(refmet_name, STUDY_INSTITUTE) %>%
+#       filter(STUDY_INSTITUTE %in% combo) %>%
+#       unique() %>%
+#       group_by(refmet_name) %>%
+#       dplyr::mutate(SHARED_SITE_METABOLITE_N = n()) %>%
+#       #arrange(desc(SHARED_SITE_METABOLITE_N)) %>%
+#       filter(SHARED_SITE_METABOLITE_N >= shared_n) %>%
+#       ungroup() %>%
+#       select(refmet_name) %>% unlist() %>% as.character() %>% unique()
+#       # Shared samples (per tissue) across Institutes
+#     if(length(all_mets) > 0){
+#     all_sams <- countdata_df %>%
+#       filter(TISSUE == tis) %>%
+#       filter(NAMED == named) %>%
+#       select(-SAMPLE_DATA, -METABOLITE_DATA) %>%
+#       unnest(cols = 'COUNT_DATA') %>%
+#       select(labelid, STUDY_INSTITUTE) %>%
+#       filter(STUDY_INSTITUTE %in% combo) %>%
+#       filter(!is.na(labelid)) %>%
+#       unique() %>%
+#       group_by(labelid) %>%
+#       dplyr::mutate(SHARED_SITE_SAMPLE_N = n()) %>%
+#       #arrange(desc(SHARED_SITE_SAMPLE_N)) %>%
+#       filter(SHARED_SITE_SAMPLE_N >= shared_n) %>%
+#       ungroup() %>%
+#       select(labelid) %>% unlist() %>% as.character() %>% unique()
+#     # Create a dataframe for output
+#     df <- data.frame("TISSUE" = tis, "CAS_N" = shared_n, "METABOLITES_N_CAS" = length(all_mets),
+#                      "SAMPLES_N_CAS" = length(all_sams),
+#                  "CAS_SITES" = paste(combo, collapse = ';'),
+#                  "METABOLITES_CAS" = paste(all_mets, collapse = ';'),
+#                  "SAMPLES_CAS" = paste0(all_sams, collapse = ';'))
+#     df_shared_sites <- rbind(df_shared_sites,df)
+#     }
+#   }
+#   }
+# }
+# 
+# # Clean the final df
+# df_shared_sites <- df_shared_sites %>%
+#   filter(METABOLITES_N_CAS > 0) %>%
+#   mutate(TISSUE = factor(TISSUE, levels = tissue_order)) %>%
+#   arrange(TISSUE, desc(CAS_N), desc(METABOLITES_N_CAS)) %>%
+#   unique()
+# 
+# # Shared Runs
+# ################################################################################
 
 #DEV
+###################
 #shared_n <- 2
-#combo <- cas_combos[4]
+#combo <- run_combos[62]
 #tis <- 'plasma'
 #tis <- 'kidney'
 #tis <- 'liver'
 df_shared_runs <- data.frame()
 ptm <- proc.time()
-for(shared_n in 2:4){
+for(shared_n in 2:3){
   print(shared_n)
   for(tis in rev(tissue_order)){
   #for(tis in 'kidney'){
     print(tis)
     # Collect all the different combinations
-    runs <- metadata_df %>%
+    # runs <- metadata_df %>%
+    #   unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+    #   filter(TISSUE == tis) %>%
+    #   select(STUDY_INSTITUTE_METAB_FAMILY) %>% unlist() %>% unique()
+    runs <- countdata_df %>%
       unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
       filter(TISSUE == tis) %>%
       select(STUDY_INSTITUTE_METAB_FAMILY) %>% unlist() %>% unique()
+    
     if(length(runs) > shared_n){
       run_combos <- combn(runs, shared_n, simplify = F)
       for(combo in run_combos){
         #combo <- run_combos[[1]]
-        combo <- str_split(combo,', ') %>% unlist()
+        #combo <- str_split(combo,', ') %>% unlist()
+        combo <- combo %>% unlist()
         #print(combo)
         # Shared metabolites (per tissue) across Institutes
         all_mets <- countdata_df %>%
@@ -349,26 +595,45 @@ for(shared_n in 2:4){
         if(length(all_mets) > 0){
           # Shared samples (per tissue) across Institutes
           all_sams <- countdata_df %>%
-          filter(TISSUE == tis) %>%
-          filter(NAMED == named) %>%
-          select(-SAMPLE_DATA, -METABOLITE_DATA) %>%
-          unnest(cols = 'COUNT_DATA') %>%
-          unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-          select(labelid, STUDY_INSTITUTE_METAB_FAMILY) %>%
-          filter(STUDY_INSTITUTE_METAB_FAMILY %in% combo) %>%
-          filter(!is.na(labelid)) %>%  
-          unique() %>%
-          group_by(labelid) %>%
-          dplyr::mutate(SHARED_RUN_SAMPLE_N = n()) %>%
-          #arrange(desc(SHARED_RUN_SAMPLE_N)) %>%
-          filter(SHARED_RUN_SAMPLE_N >= shared_n) %>%
-          ungroup() %>%
-          select(labelid) %>% unlist() %>% as.character() %>% unique()
+            filter(TISSUE == tis) %>%
+            filter(NAMED == named) %>%
+            select(-SAMPLE_DATA, -METABOLITE_DATA) %>%
+            unnest(cols = 'COUNT_DATA') %>%
+            unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+            select(labelid, STUDY_INSTITUTE_METAB_FAMILY) %>%
+            filter(STUDY_INSTITUTE_METAB_FAMILY %in% combo) %>%
+            filter(!is.na(labelid)) %>%  
+            unique() %>%
+            group_by(labelid) %>%
+            dplyr::mutate(SHARED_RUN_SAMPLE_N = n()) %>%
+            #arrange(desc(SHARED_RUN_SAMPLE_N)) %>%
+            filter(SHARED_RUN_SAMPLE_N >= shared_n) %>%
+            ungroup() %>%
+            select(labelid) %>% unlist() %>% as.character() %>% unique()
+          # Shared pids
+          # Shared samples (per tissue) across Institutes
+          all_pids <- countdata_df %>%
+            filter(TISSUE == tis) %>%
+            filter(NAMED == named) %>%
+            select(-SAMPLE_DATA, -METABOLITE_DATA) %>%
+            unnest(cols = 'COUNT_DATA') %>%
+            unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+            select(pid, STUDY_INSTITUTE_METAB_FAMILY) %>%
+            filter(STUDY_INSTITUTE_METAB_FAMILY %in% combo) %>%
+            filter(!is.na(pid)) %>%  
+            unique() %>%
+            group_by(pid) %>%
+            dplyr::mutate(SHARED_RUN_SAMPLE_N = n()) %>%
+            #arrange(desc(SHARED_RUN_SAMPLE_N)) %>%
+            filter(SHARED_RUN_SAMPLE_N >= shared_n) %>%
+            ungroup() %>%
+            select(pid) %>% unlist() %>% as.character() %>% unique()
           # Create a dataframe for output
         df <- data.frame("TISSUE" = tis, "RUN_N" = shared_n, "METABOLITES_N_RUN" = length(all_mets),
                 "SAMPLES_N_RUN" = length(all_sams),
                  "RUNS" = paste(combo, collapse = ';'),"METABOLITES_RUN" = paste(all_mets, collapse = ';'),
-                 "SAMPLES_RUN" = paste0(all_sams, collapse = ';'))
+                 "SAMPLES_RUN" = paste0(all_sams, collapse = ';'),
+                "PIDS_RUN" = paste0(all_pids, collapse = ';'))
         df_shared_runs <- rbind(df_shared_runs,df)
         }
       }
@@ -384,1194 +649,2557 @@ df_shared_runs <- df_shared_runs %>%
   arrange(TISSUE, desc(RUN_N), desc(METABOLITES_N_RUN)) %>%
   unique()
 
-# Arrange the column names (mistake in code not needed for next iteration)
-# names(df_shared_runs)[6] <- 'METABOLITES_RUN'
-# names(df_shared_runs)[7] <- 'SAMPLES_RUN'
+############################
 
-# Join the dataframes
-all(grepl('_',df_shared_sites$CAS_SITES)) # Must be FALSE for next line of code to work
+## Arrange the column names (mistake in code not needed for next iteration)
+## names(df_shared_runs)[6] <- 'METABOLITES_RUN'
+## names(df_shared_runs)[7] <- 'SAMPLES_RUN'
 
-# Create the CAS_SITE Join column
-df_shared_runs <- df_shared_runs %>% 
-  mutate(CAS_SITES = RUNS)
-metab_families <- metadata_df$METAB_FAMILY %>% unique()
-for(mf in rev(metab_families)){
-df_shared_runs <- df_shared_runs %>% 
-  mutate(CAS_SITES = str_remove_all(CAS_SITES, paste0('_',mf)))
-}
-# SORT CAS SITES (used for joining)
-df_shared_runs <- df_shared_runs %>%
-  mutate(CAS_SITES = CAS_SITES %>% str_split(';') %>% 
-           map(unique) %>%
-           map(sort) %>% 
-           map(paste, collapse = ';')) %>%
-  unnest(CAS_SITES)
+# metab_families <- metadata_df$METAB_FAMILY %>% unique()
+# 
+# # Join the dataframes
+# all(grepl('_',df_shared_sites$CAS_SITES)) # Must be FALSE for next line of code to work
+# 
+# # Create the CAS_SITE Join column
+# df_shared_runs <- df_shared_runs %>% 
+#   mutate(CAS_SITES = RUNS)
+# 
+# for(mf in rev(metab_families)){
+# df_shared_runs <- df_shared_runs %>% 
+#   mutate(CAS_SITES = str_remove_all(CAS_SITES, paste0('_',mf)))
+# }
+# # SORT CAS SITES (used for joining)
+# df_shared_runs <- df_shared_runs %>%
+#   mutate(CAS_SITES = CAS_SITES %>% str_split(';') %>% 
+#            map(unique) %>%
+#            map(sort) %>% 
+#            map(paste, collapse = ';')) %>%
+#   unnest(CAS_SITES)
+# 
+# df_shared_sites <- df_shared_sites %>%
+#   mutate(CAS_SITES = CAS_SITES %>% str_split(';') %>% 
+#            map(unique) %>% map(sort) %>% map(paste, collapse = ';')) %>%
+#   unnest(CAS_SITES)
+# 
+# # Join the Dataframes
+# df_shared_casrun <- left_join(df_shared_runs, df_shared_sites, by =c('TISSUE','CAS_SITES'))
 
-df_shared_sites <- df_shared_sites %>%
-  mutate(CAS_SITES = CAS_SITES %>% str_split(';') %>% 
-           map(unique) %>% map(sort) %>% map(paste, collapse = ';')) %>%
-  unnest(CAS_SITES)
+###########################
 
-# Join the Dataframes
-df_shared_casrun <- left_join(df_shared_runs, df_shared_sites, by =c('TISSUE','CAS_SITES'))
+df_shared_casrun <- df_shared_runs %>%
+  arrange(desc(METABOLITES_N_RUN))
 
 # Save the object
-shared_casrun_file <- paste0(WD, '/data/20201103_shared-samples-metabs-sites-runs_steep.RDS')
-#saveRDS(df_shared_casrun, file = shared_casrun_file)
+shared_casrun_file <- paste0(WD, '/data/20201103_shared-samples-metabs-sites-runs2_steep.RDS')
+saveRDS(df_shared_casrun, file = shared_casrun_file)
+}
+```
 
+### Shared Metabolites and Samples: Class and Comparison Annotation
+```{r Shared Metabolites and Samples: Class and Comparison Annotation}
+# Reload the data
+####################
+shared_casrun_file <- paste0(WD, '/data/20201103_shared-samples-metabs-sites-runs2_steep.RDS')
 df_shared_casrun <- readRDS(file = shared_casrun_file)
 
 #Broad Institute_hilicpos;University of Michigan_rppos
 #Duke University_ac;Broad Institute_hilicpos
 #Duke University_ac;University of Michigan_rppos
 
+# Investigate the distribution of datasets based on shared samples and metabolites
+####################
 df_shared_casrun %>%
-  filter(TISSUE == 'liver') %>%
-  filter(RUN_N == 3)
-```
-
-# Normalize and plot boxplots and matched density plot after normalization
--Boxplots
--Density plot
--Summary Statistics
-```{r Boxplots and Density Plots to Measure Normalization}
-
-# Assign Variables
-################################################################################
-run_n <- 2
-cas_n <- 2
-tissue <- 'liver'
-#runs <- "Duke University_ac;Broad Institute_hilicpos"
-runs <- "Broad Institute_hilicpos;University of Michigan_rppos"
-shared_vals <- df_shared_casrun %>%
-  filter(TISSUE == tissue) %>%
-  filter(RUNS == runs)
-# Shared metabolites
-shared_mets <- shared_vals$METABOLITES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared samples
-shared_sams <- shared_vals$SAMPLES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared Runs
-shared_runs <- shared_vals$RUNS %>% unlist() %>% str_split(';') %>% unlist()
-
-# Subset Data
-################################################################################
-# Collect abundances in long format
-plot_df <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
-
-# To Data as matrixes
-################################################################################
-# Filename Nomenclature
-tissue_study_institute_metab_outs <- plot_df %>%
-  unite(TISSUE,STUDY_INSTITUTE_METAB_FAMILY, col = TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>%
-  select(TISSUE_STUDY_INSTITUTE_METAB_FAMILY) %>% unlist() %>% as.character() %>% unique() %>%
-  str_replace_all('_','-') %>% str_replace_all(' ','-')
-# Collect the matrixes
-run_mats <- plot_df %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, labelid, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(arrange, labelid) %>%
-  map(column_to_rownames, var = "labelid") %>%
-  map(as.matrix)
-run_mat1 <- run_mats[[1]]
-run_mat2 <- run_mats[[2]]
-
-  # Collect the samples (remove QCs) & join sample order
-sample_join <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unnest(SAMPLE_DATA) %>%
-  filter(sample_type == 'Sample') %>%
-  select(sample_id, sample_order)
-
-# Collect the sample orders
-run_ords <- plot_df %>%
-  left_join(y = sample_join, by = c("viallabel" = "sample_id")) %>%
-  filter(labelid %in% shared_sams) %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, labelid, sample_order) %>%
-  map(unique) %>%
-  map(arrange, labelid)
-run_ord1 <- run_ords[[1]]
-run_ord2 <- run_ords[[2]]
-
-if(all(row.names(run_mat1) == row.names(run_mat2))){
-  mat_file1 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[1],'_steep.RDS')
-  mat_file2 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[2],'_steep.RDS')
-  saveRDS(run_mat1, mat_file1)
-  saveRDS(run_mat2, mat_file2)
-  # Save the order files
-  ord_file1 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[1],'-sample-order_steep.RDS')
-  ord_file2 <- paste0(WD,'/files_to_share/20201103_run-comparisons-',tissue_study_institute_metab_outs[2],'-sample-order_steep.RDS')
-  saveRDS(run_ord1, ord_file1)
-  saveRDS(run_ord2, ord_file2)
-}
-# run_mat1l <- readRDS(mat_file1)
-# run_mat1l == run_mat1
-# run_mat2l <- readRDS(mat_file2)
-# run_mat2l == run_mat2
-# run_ord1l <- readRDS(ord_file1)
-# run_ord1l == run_ord1
-# run_ord2l <- readRDS(ord_file2)
-# run_ord2l == run_ord2
+  mutate(RUN_N = as.character(RUN_N)) %>%
+  ggplot(aes(x = METABOLITES_N_RUN, y = SAMPLES_N_RUN, color = RUN_N)) +
+  # stat_bin2d(bins = 50) +
+  geom_jitter(alpha = 0.4, height = 0.2, width = 1, size =2) +
+  # scale_color_continuous(low = "#56B1F7", high = "#132B43",
+  #                                      name = "Group") +
+  #scale_color_manual(values=c("dodgerblue4", "dodgerblue1", "red", "red4","rosybrown")) +
+  #scale_color_manual(values=r) +
+  #scale_shape_manual(values=c(16, 17, 18, 15,8)) +
+  theme(aspect.ratio = 1) +
+  scale_x_continuous(breaks = seq(0, 80, by = 10)) +
+  geom_vline(xintercept=c(2, 5,15,40), linetype="dotted") +
+  labs(title="Shared Metabolites and Samples Across Datasets",
+       x = "Shared Metabolites",
+       y = "Shared Samples") +
+  labs(color = "Shared Datasets")
 
 
-
-
-# Plot Boxplots faceted by shared metabolites
-################################################################################
-p <- plot_df %>%
-  ggplot(aes(y = METABOLITE_NAME, x = VALUE, color = STUDY_INSTITUTE_METAB_FAMILY)) +
-  geom_boxplot(alpha = 0.8) +
-  labs(title=paste0(tissue,' ',runs,"\n
-                    Original Metabolite Abundances"),x = "Abundance", y = "") +
-  theme(axis.text.y = element_text(size = 6, angle = 0)) +
-  theme(legend.text = element_text(size=8),
-        legend.title = element_text(size = 7))
-plot(p)
-
-# Normalize
-# Note in this step, we use labelid to account for mayo's duplicate samples
-################################################################################
-norm_list <- plot_df %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, labelid, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(column_to_rownames, var = "labelid") %>%
-  map(as.matrix) %>%
-  map(AutoScaleMatrix) %>%
-  map(as.data.frame) %>%
-  map(rownames_to_column, var = "labelid") %>%
-  map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets))
-norm_df1 <- norm_list[[1]] %>%
-  mutate(STUDY_INSTITUTE_METAB_FAMILY = shared_runs[1])
-norm_df2 <- norm_list[[2]] %>%
-  mutate(STUDY_INSTITUTE_METAB_FAMILY = shared_runs[2])
-norm_df <- rbind(norm_df1, norm_df2)
-
-
-# Plot Boxplots faceted by shared metabolites
-################################################################################
-p <- norm_df %>%
-  ggplot(aes(y = METABOLITE_NAME, x = VALUE, color = STUDY_INSTITUTE_METAB_FAMILY)) +
-  geom_boxplot(alpha = 0.8) +
-  labs(title=paste0(tissue,' ',runs,":
-                    Normalized Abundances"),
-             x = "Abundance", y = "") +
-  theme(axis.text.y = element_text(size = 6, angle = 0)) +
-  theme(legend.text = element_text(size=8),
-        legend.title = element_text(size = 7))
-plot(p)
-
-# Plot the density plot for all the gene counts
-################################################################################
-p <- norm_df %>%
-  #filter(DATASET == 'targeted') %>%
-  ggplot(aes(x = VALUE, color = STUDY_INSTITUTE_METAB_FAMILY)) +
+# Plot a density plot annotated by the number of shared comparions
+df_shared_casrun %>%
+  mutate(RUN_N = as.character(RUN_N)) %>%
+  ggplot(aes(x = METABOLITES_N_RUN, color = RUN_N)) +
   geom_density() +
-  labs(title=paste0(tissue,' ',runs,":\n
-                    Normalized Abundances"),
-       x = "Abundance",
+  labs(title="Shared Metabolites and Samples Across Datasets",
+       x = "Shared Metabolites",
        y = "Density") +
-  theme(legend.text = element_text(size=8),
-        legend.title = element_text(size = 7))
-plot(p)
+  labs(color = "Shared Datasets") +
+  scale_x_continuous(breaks = seq(0, 80, by = 10)) +
+  geom_vline(xintercept=c(2, 5,15,40), linetype="dotted")
 
-# Summary Statistics of Density plot distribution
-################################################################################
-# Iterate through the runs and collect vectors
-df_all <- data.frame()
-#shared_run <- shared_runs[1]
-for(shared_run in shared_runs){
-  # Collect numeric vector
-  num_vec <- norm_df %>%
-    filter(STUDY_INSTITUTE_METAB_FAMILY == shared_run) %>%
-    select(VALUE) %>% unlist() %>% unname()
-  df <- NumericSummaryStats(num_vec)
-  row.names(df) <- shared_run
-  df_all <- rbind(df_all, df)
-}
-df_all %>%
-  select(NA_COUNT, MEAN,MEDIAN,Q1,Q3,VARIANCE,STD_DEV,KURTOSIS,SKEW)
+# Create the class annotation
+##################
+df_shared_casrun <- df_shared_casrun %>%
+  arrange(desc(METABOLITES_N_RUN)) %>%
+  filter(METABOLITES_N_RUN >= 2) %>%
+  filter(SAMPLES_N_RUN >= 2) %>%
+  mutate(SHARED_MET_CLASS = case_when(METABOLITES_N_RUN >= 40 ~ '1',
+                                      METABOLITES_N_RUN >= 15 ~ '2',
+                                      METABOLITES_N_RUN >= 5 ~ '3'))
+
+df_shared_casrun %>%
+  arrange(desc(METABOLITES_N_RUN)) %>%
+  filter(METABOLITES_N_RUN >= 2) %>%
+  filter(SAMPLES_N_RUN >= 2) %>%
+  unite(SHARED_MET_CLASS,RUN_N, col = "SHARED_MET_CLASS_RUN_N", remove = F) %>%
+  select(SHARED_MET_CLASS_RUN_N) %>% unlist() %>% as.character() %>% table()
+
+# Add the Comparison ID
+####################
+df_shared_casrun <- df_shared_casrun %>%
+  arrange(desc(METABOLITES_N_RUN)) %>%
+  filter(METABOLITES_N_RUN >= 2) %>%
+  filter(SAMPLES_N_RUN >= 2) %>%
+  mutate(COMP_ID = str_pad(row_number(), 4, pad = "0"))
+
+# Collect the triplets with the most overlaps
+group_3s <- df_shared_casrun %>%
+  filter(RUN_N == 3) %>%
+  filter(grepl('Mayo', RUNS)) %>%
+  filter(METABOLITES_N_RUN >= 6) %>%
+  select(METABOLITES_N_RUN, SAMPLES_N_RUN, RUNS, SHARED_MET_CLASS,COMP_ID) %>%
+  select(RUNS) %>% unlist() %>% table() %>% sort() %>% rev() %>% names()
+
+#0067
+df_shared_casrun %>%
+  select(TISSUE, METABOLITES_N_RUN, SAMPLES_N_RUN, RUNS, SHARED_MET_CLASS,COMP_ID)
+
+
+
 ```
 
+### Shared Metabolites and Samples
+```{r Shared Metabolites and Samples}
+df_shared_casrun %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+```
 
-
-
-
-# Examine the Distribution of the Original Data
-# WARNING: Subsets of samples have been taken for development purposes
-# Ensure that QC samples are not used in scaling
-```{r Boxplots and Density Plots to Measure Distribution, results='asis'}
-# Examine the Distributions for original data and transformed data
-TFORM <- 'AutoScaled'
-TFORM <- 'Untransformed'
-# Variable of interest
-VOI <- "STUDY_INSTITUTE"
-#VOI2 <- "TECHNOLOGY"
-#VOI2 <- "METAB_FAMILY"
-VOI2 <- "DATASET"
-for(TFORM in c('Untransformed','AutoScaled')){
-    #Starting with matrix: convert to long format dataframe for plotting purposes
-  # When transforming, ensure that QC samples are not present
-    if(TFORM == 'Untransformed'){
-    long_df <- countdata_df %>%
-    ungroup() %>%
-    unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-    filter(TISSUE == tissue) %>%
-    filter(NAMED == named) %>%
-    unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-    select(VOI, VOI2,COUNT_DATA) %>%
-    unnest(COUNT_DATA) %>%
-    filter(METABOLITE_NAME %in% shared_mets) %>%
-    filter(labelid %in% shared_sams) %>%
-    filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-    filter(!is.na(labelid) ) %>%
-    select(VOI,VOI2,viallabel, METABOLITE_NAME,VALUE)
-  }else if(TFORM == 'AutoScaled'){
-    long_int <- countdata_df %>%
+### Subset Data for Collaboration (Matrices and Dataframes as R Objects)
+```{r Subset Data for Collaboration}
+if(F){
+# DEV
+##################
+#row <- 1
+# tissue_study_institute_metab_rep <- "liver_Mayo Clinic_ac"
+#for(row in 1:10){
+for(row in 1:nrow(df_shared_casrun)){
+  #print(row)
+  # Variables
+  ##############################################################################
+  #df_shared_casrun[row,]
+  tissue <- df_shared_casrun[row, "TISSUE"] %>% unlist() %>% as.character()
+  shared_runs <- df_shared_casrun[row, "RUNS"] %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  shared_mets <- df_shared_casrun[row, "METABOLITES_RUN"] %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  shared_sams <- df_shared_casrun[row, "SAMPLES_RUN"] %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  named <- "named"
+  shared_runs_out <- shared_runs %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower()
+  nxp_out <- paste0('m',as.character(length(shared_mets)),'-s',as.character(length(shared_sams)))
+  comp_id <- df_shared_casrun[row, "COMP_ID"] %>% unlist() %>% as.character()
+  
+  # First draft of 5 part id (TODO
+  #####################)
+  # # Tissue
+  # id1 <- tissue %>% str_split('-') %>% map(str_sub, start = 1L, end = 1L) %>% unlist() %>% paste0(collapse ='') %>% toupper()
+  # # Dataset (Targeted/Untargeted)
+  # id2 <- 'T'
+  # # Study-Institute/Technology/Metab_family (Shared Run) [1]
+  # id3 <- shared_runs_out[1] %>% str_split('-') %>% map(str_sub, start = 1L, end = 1L) %>% unlist() %>% paste0(collapse ='') %>% toupper()
+  # # Study-Institute/Technology/Metab_family (Shared Run) [2]
+  # id4 <- shared_runs_out[2] %>% str_split('-') %>% map(str_sub, start = 1L, end = 1L) %>% unlist() %>% paste0(collapse ='') %>% toupper()
+  # # Named
+  # id5 <- "N"
+  # id5p <- paste0(c(id1,id2,id3,id4,id5), collapse = '-')
+  
+  # Account for Mayo Replicates
+  if(any(grepl('Mayo', shared_runs)) & tissue %in% c("gastrocnemius","heart","lung",
+                                                     "liver","white-adipose")){
+    # Subset Data
+    ################################################################################
+    # First collect the mayo replicates
+    ##############
+    reps <- countdata_df %>%
       ungroup() %>%
       filter(TISSUE == tissue) %>%
       filter(NAMED == named) %>%
-      unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-      select(VOI,VOI2, COUNT_DATA) %>%
+      unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
       unnest(COUNT_DATA) %>%
       filter(METABOLITE_NAME %in% shared_mets) %>%
       filter(labelid %in% shared_sams) %>%
       filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-      filter(!is.na(labelid) ) %>%
-      select(viallabel, METABOLITE_NAME,VALUE) %>%
-      distinct(viallabel, METABOLITE_NAME, .keep_all = T) %>%
-      pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
-      tibble::column_to_rownames(var = "viallabel") %>%
-      as.matrix() %>%
-      AutoScaleMatrix() %>%
-      as.data.frame() %>%
-      tibble::rownames_to_column(var = "viallabel") %>%
-      pivot_longer(names_to = "METABOLITE_NAME", values_to = "VALUE", cols = all_of(all_mets))
-    
-    # Join the tissues
-    join_df <- countdata_df %>%
+      filter(STUDY_INSTITUTE == 'Mayo Clinic') %>%
+      #filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
+      select(viallabel) %>% unlist() %>% as.character() %>% unique() %>%
+      str_sub(-3,-1) %>% unique()
+      
+    #rep <- reps[1]
+    for(rep in reps){
+      # Kick out one of the mayo reps and save the file
+      not_rep <- reps[reps != rep]
+      
+      # Collect abundances in long format
+      plot_df <- countdata_df %>%
+        ungroup() %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% shared_mets) %>%
+        filter(labelid %in% shared_sams) %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+        mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),viallabel) ~ reps[1],
+                                     grepl(paste0(reps[2],"$"),viallabel) ~ reps[2],
+                                     grepl(paste0(reps[3],"$"),viallabel) ~ reps[3])) %>%
+        filter(!(STUDY_INSTITUTE == 'Mayo Clinic' & REPLICATE == not_rep))
+
+      # Subset Data
+      ##########################################################################
+      # Subset matrices by replicate samples
+      runs_mats <- plot_df %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(select, labelid, METABOLITE_NAME, VALUE) %>%
+        map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+        map(arrange, labelid) %>%
+        map(column_to_rownames, var = "labelid") %>%
+        map(as.matrix)
+      run_mat1 <- runs_mats[[1]]
+      run_mat2 <- runs_mats[[2]]
+      # sort rows and columns
+      colord1 <- colnames(run_mat1) %>% sort()
+      roword1 <- rownames(run_mat1) %>% sort()
+      run_mat1 <- run_mat1[roword1,colord1]
+      colord2 <- colnames(run_mat2) %>% sort()
+      roword2 <- rownames(run_mat2) %>% sort()
+      run_mat2 <- run_mat2[roword2,colord2]
+      # Ensure that samples have the same labelid 
+      if(all(colord1 == colord2) & all(roword1 == roword2)){
+        # Save the matrices
+        mat_file1 <- paste0(WD,'/files_to_share/20201103_named-site-comparison-',comp_id,'-',rep,'_',tissue,'_',nxp_out,'_',shared_runs_out[1],'_steep.RDS')
+        mat_file2 <- paste0(WD,'/files_to_share/20201103_named-site-comparison-',comp_id,'-',rep,'_',tissue,'_',nxp_out,'_',shared_runs_out[2],'_steep.RDS')
+        saveRDS(run_mat1, mat_file1)
+        saveRDS(run_mat2, mat_file2)
+      }
+    }
+  }else{
+    # Subset Data
+    ################################################################################
+    # Collect abundances in long format
+    plot_df <- countdata_df %>%
       ungroup() %>%
       filter(TISSUE == tissue) %>%
       filter(NAMED == named) %>%
-      unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-      select(VOI, VOI2, COUNT_DATA) %>%
+      unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
       unnest(COUNT_DATA) %>%
-      filter(METABOLITE_NAME %in% all_mets) %>%
-      filter(!is.na(labelid) ) %>%
-      select(viallabel,VOI,VOI2) %>%
-      unique()
-    long_df <- left_join(long_int, join_df, by = c('viallabel'))
-    }
+      filter(METABOLITE_NAME %in% shared_mets) %>%
+      filter(labelid %in% shared_sams) %>%
+      filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
   
-  # Plot Boxplots for all shared metabolites faceted by cas site
-  ################################################################################
-  p <- long_df %>%
-    ggplot(aes(y = METABOLITE_NAME, x = VALUE)) +
-    geom_boxplot(aes_string(color = VOI2), alpha = 0.5) +
-    labs(title=paste0("Box Plots of Metabolite Abundances Across ",VOI),
-               x = "Abundance", y = "") +
-    theme(axis.text.y=element_text(size=4)) +
-    theme(axis.text.x=element_text(size=8)) +
-    theme(legend.text = element_text(size=8)) +
-    facet_wrap(VOI)
-  print(p)
-# Plot the density plot for all the gene counts
-################################################################################
-  if(TFORM == 'Untransformed'){
-    p <- long_df %>%
-      ggplot(aes_string(x = "VALUE", color = VOI2)) +
-      geom_density() +
-      labs(title=paste0("Box Plots of Metabolite Abundances Across ",VOI),
-           x = "Abundance",y = "Density") +
-      facet_wrap(VOI)
-    }else if(TFORM == 'AutoScaled'){
-      p <- long_df %>%
-        ggplot(aes_string(x = "VALUE", color = VOI2)) +
-        geom_density() +
-        labs(title=paste0("Box Plots of Metabolite Abundances Across ",VOI),
-             x = "Abundance",y = "Density") +
-        facet_wrap(VOI) +
-        xlim(-1,1)
-      }
-    print(p)
-
-    # Summary Statistics of Density Plot Distribution Across CAS Sites
+    # Subset Data
     ################################################################################
-    vois <- long_df %>%
-      select(VOI,VOI2) %>% unique() %>%
-    unite(!!sym(VOI),!!sym(VOI2), col=!!sym(paste0(VOI,'_',VOI2))) %>% 
-      unlist() %>% as.character() %>% unique()
-    # Iterate through the cas sites and collect vectors
-    #cas_site <- 'duke'
-    df_all <- data.frame()
-    #tt <- vois[1]
-    for(tt in vois){
-      # Collect numeric vector
-      num_vec <- long_df %>%
-        unite(!!sym(VOI),!!sym(VOI2), col=!!sym(paste0(VOI,'_',VOI2))) %>% 
-        filter(!!sym(paste0(VOI,'_',VOI2)) == tt) %>%
-        select(VALUE) %>% unlist() %>% unname()
-      df <- NumericSummaryStats(num_vec)
-      row.names(df) <- tt
-      df_all <- rbind(df_all, df)
+    # Subset matrices by replicate samples
+    runs_mats <- plot_df %>%
+      split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+      map(select, labelid, METABOLITE_NAME, VALUE) %>%
+      map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+      map(arrange, labelid) %>%
+      map(column_to_rownames, var = "labelid") %>%
+      map(as.matrix)
+    run_mat1 <- runs_mats[[1]]
+    run_mat2 <- runs_mats[[2]]
+    # sort rows and columns
+    colord1 <- colnames(run_mat1) %>% sort()
+    roword1 <- rownames(run_mat1) %>% sort()
+    run_mat1 <- run_mat1[roword1,colord1]
+    colord2 <- colnames(run_mat2) %>% sort()
+    roword2 <- rownames(run_mat2) %>% sort()
+    run_mat2 <- run_mat2[roword2,colord2]
+  
+    #print(tissue_study_institute_metab_rep)
+    #print(runs)
+    #print(table(x == y))
+    if(all(colord1 == colord2) & all(roword1 == roword2)){
+      # Save the matrices
+      mat_file1 <- paste0(WD,'/files_to_share/20201103_named-site-comparison-',comp_id,'_',tissue,'_',nxp_out,'_',shared_runs_out[1],'_steep.RDS')
+      mat_file2 <- paste0(WD,'/files_to_share/20201103_named-site-comparison-',comp_id,'_',tissue,'_',nxp_out,'_',shared_runs_out[2],'_steep.RDS')
+      saveRDS(run_mat1, mat_file1)
+      saveRDS(run_mat2, mat_file2)
+      }
     }
-    df_all %>%
-      arrange(MEDIAN) %>% print()
   }
+}
+print(paste0('Matrices saved to: ',WD,'/files_to_share'))
 ```
 
-# Plot a Metabolite by Metabolite Correlation Matrix (shared samples and shared metabolites)
-```{r Metabolite by Metabolite Correlation}
-################################################################################
-####################### Metabolite by Metabolite Correlations ##################
-################################################################################
+### PrepareData2Sites function
+```{r}
+PrepareData2Sites <- function(render = FALSE,
+                              run_source = F,
+                              save_list = T,
+                              comp_id, 
+                              data_dir,
+                              run_df, 
+                              count_df, 
+                              named = "named",
+                              all_met_df,
+                              run_zero = T,
+                              zero_rm = 0.95,
+                              na_rm = 0.6,
+                              report_version = 'v1z',
+                              run_impute = T,
+                              imputation_method = 'half-min',
+                              norm_order = 'sam_feat',
+                              norm_log = 'none',
+                              sam_norm_center = 'median',
+                              sam_norm_scale = 'sd',
+                              feat_norm_center = 'median',
+                              feat_norm_scale = 'sd',
+                              run_sxs_cor_t = T,
+                              run_fxf_cor_t = T,
+                              run_boxplot_o = F,
+                              run_boxplot_t = F,
+                              run_save_mat_t = F,
+                              run_dist_o = F,
+                              run_scatter_o = F,
+                              run_sxs_cor_o = F,
+                              run_fxf_cor_o = F,
+                              run_pca_o = F,
+                              run_dist_t = F,
+                              run_scatter_t = F,
+                              run_fxf_sxs_sf_t = F,
+                              run_pca_t = F){
 
-# Assign Variables
-################################################################################
-run_n <- 2
-cas_n <- 2
-tissue <- 'liver'
-runs <- "Duke University_ac;Broad Institute_hilicpos"
-shared_vals <- df_shared_casrun %>%
-  filter(TISSUE == tissue) %>%
-  filter(RUNS == runs)
-# Shared metabolites
-shared_mets <- shared_vals$METABOLITES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared samples
-shared_sams <- shared_vals$SAMPLES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared Runs
-shared_runs <- shared_vals$RUNS %>% unlist() %>% str_split(';') %>% unlist()
-
-# Autoscaled NxP Matrix
-shared_met_mat <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %!in% "Mayo Clinic_ac" & !grepl("2$",viallabel)) %>%
-  #unite(labelid,STUDY_INSTITUTE_METAB_FAMILY, 
-  #      col = labelid_STUDY_INSTITUTE_METAB_FAMILY, remove = F) %>%
-  unite(METABOLITE_NAME,STUDY_INSTITUTE_METAB_FAMILY,col = METABOLITE_NAME_STUDY_INSTITUTE_METAB_FAMILY, remove = F) %>%
-  select(labelid, METABOLITE_NAME_STUDY_INSTITUTE_METAB_FAMILY, VALUE) %>%
-  pivot_wider(names_from = METABOLITE_NAME_STUDY_INSTITUTE_METAB_FAMILY, values_from = VALUE) %>%
-  tibble::column_to_rownames(var = "labelid") %>%
-  as.matrix() %>%
-  AutoScaleMatrix()
-
-# If Necessary: Perform KNN NA value adjustment
-# Determine the proportion of missing data
-na_df <- data.frame()
-for(i in 1:ncol(shared_met_mat)){
-    # Collect numeric vector
-    num_vec <- shared_met_mat[,i] %>% unname()
-    df <- NumericSummaryStats(num_vec)
-    row.names(df) <- colnames(shared_met_mat)[i]
-    na_df <- rbind(na_df, df)
+  # Ensure counts are in dataframe form
+  if(!is.data.frame(count_df)){
+    stop("Counts must be nested dataframe")
   }
-na_df %>% select(NA_COUNT, NA_FREQ) %>%
-    filter(NA_FREQ > 0) %>%
-    arrange(desc(NA_FREQ))
-
-# Collect the major columns to be adjsuted
-imputed_cols10 <- na_df %>% select(NA_COUNT, NA_FREQ) %>%
-    filter(NA_FREQ > 0) %>%
-    arrange(desc(NA_FREQ)) %>%
-    head(n = 10) %>% row.names()
-
-# Use a knn method to impute missing values (need to come back and adjust)
-preProcValues <- preProcess(shared_met_mat,
-                              method = c("knnImpute"),
-                            k = floor(sqrt(ncol(shared_met_mat))),
-                            knnSummary = mean)
-# To get the normalizaed data
-impute_shared_met_mat <- predict(preProcValues, shared_met_mat, na.action = na.pass)
-# To denormalize ("deautoscale")
-shared_met_mat <- ReverseAutoScaleMatrix(impute_shared_met_mat)
-
-# Create an NxN Matrix of correlation
-if(Corr == 'Pearson'){
-        cor1 <- stats::cor(shared_met_mat, method = 'pearson') %>% round(digits = 3)
-}else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(shared_met_mat, method = 'spearman') %>% round(digits = 3)
+  if(!is.character(comp_id)){
+    stop("Comparison identifier must be a character string")
+  }
+  # Variables
+  RUN_N <- run_df %>%
+    filter(COMP_ID == comp_id) %>%
+    select(RUN_N) %>% unlist() %>% as.numeric()
+  # Ensure run comparison is for 2 sites
+  if(RUN_N != 2){
+      stop("Comparison must be 2 site comparison")
+  }
+  tissue <- run_df %>%
+    filter(COMP_ID == comp_id) %>%
+    select(TISSUE) %>% unlist() %>% as.character()
+  shared_runs <- run_df %>%
+    filter(COMP_ID == comp_id) %>%
+    select(RUNS) %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  shared_runs_out <- shared_runs %>% 
+      str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+      paste(collapse = '_')
+  shared_mets <- run_df %>%
+    filter(COMP_ID == comp_id) %>%
+    select(METABOLITES_RUN) %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  shared_sams <- run_df %>%
+    filter(COMP_ID == comp_id) %>%
+    select(SAMPLES_RUN) %>% unlist() %>% as.character() %>% 
+    str_split(pattern = ';') %>% unlist()
+  nxp_out <- paste0('m',as.character(length(shared_mets)),'-s',as.character(length(shared_sams)))
+   # Subset Data
+  ################################################################################
+  # Collect abundances in long format
+  plot_df <- count_df %>%
+      ungroup() %>%
+      filter(TISSUE == tissue) %>%
+      filter(NAMED == named) %>%
+      unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+      filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+      unnest(COUNT_DATA) %>%
+      filter(METABOLITE_NAME %in% shared_mets) %>%
+      filter(labelid %in% shared_sams)
+  
+      # # Collect abundances in long "joined" format
+      # plot_join_df <- count_df %>%
+      #   ungroup() %>%
+      #   unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+      #   filter(TISSUE == tissue) %>%
+      #   filter(NAMED == named) %>%
+      #   filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+      #   unnest(COUNT_DATA) %>%
+      #   filter(METABOLITE_NAME %in% shared_mets) %>%
+      #   filter(labelid %in% shared_sams) %>%
+      #   select(STUDY_INSTITUTE_METAB_FAMILY,METABOLITE_NAME,labelid,VALUE) %>%
+      #   mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+      #   split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+      #   map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+      #   map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+      #   purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+      
+      # Collect normalized abundances in long "joined" format
+      # norm_join_df <- plot_df %>%
+      #   unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, 
+      #         col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", remove = F,sep =';') %>%
+      #   select(STUDY_INSTITUTE_METAB_FAMILY, labelid_STUDY_INSTITUTE_METAB_FAMILY, 
+      #          METABOLITE_NAME, VALUE) %>%
+      #   mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+      #   split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+      #   map(select, -STUDY_INSTITUTE_METAB_FAMILY) %>%
+      #   map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+      #   map(column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+      #   map(as.matrix) %>%
+      #   map(AutoScaleMatrix) %>%
+      #   map(as.data.frame) %>%
+      #   map(rownames_to_column, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+      #   map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets)) %>%
+      #   map(separate, col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", 
+      #       into = c("labelid", "STUDY_INSTITUTE_METAB_FAMILY"), sep =';') %>%
+      #   map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+      #   map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+      #   purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+      
+      
+      
+      # Load the out list
+      prep_list <- list()
+      prep_list[['comp_id']] <- comp_id
+      prep_list[['RUN_N']] <- RUN_N
+      prep_list[['tissue']] <- tissue
+      prep_list[['shared_runs']] <- shared_runs 
+      prep_list[['shared_runs_out']] <- shared_runs_out
+      prep_list[['shared_mets']] <- shared_mets
+      prep_list[['shared_sams']] <- shared_sams
+      prep_list[['nxp_out']] <- nxp_out
+      prep_list[['plot_df']] <- plot_df
+      prep_list[['all_met_df']] <- all_met_df
+      prep_list[['run_zero']] <- run_zero
+      prep_list[['zero_rm']] <- zero_rm
+      prep_list[['na_rm']] <- na_rm
+      prep_list[['report_version']] <- report_version
+      prep_list[['run_impute']] <- run_impute
+      prep_list[['imputation_method']] <- imputation_method
+      prep_list[['norm_order']] <- norm_order
+      prep_list[['norm_log']] <- norm_log
+      prep_list[['sam_norm_center']] <- sam_norm_center
+      prep_list[['sam_norm_scale']] <- sam_norm_scale
+      prep_list[['feat_norm_center']] <- feat_norm_center
+      prep_list[['feat_norm_scale']] <- feat_norm_scale
+      prep_list[['run_sxs_cor_t']] <- run_sxs_cor_t
+      prep_list[['run_fxf_cor_t']] <- run_fxf_cor_t
+      prep_list[['run_boxplot_o']] <- run_boxplot_o
+      prep_list[['run_boxplot_t']] <- run_boxplot_t
+      prep_list[['run_save_mat_t']] <- run_save_mat_t
+      prep_list[['run_dist_o']] <- run_dist_o
+      prep_list[['run_scatter_o']] <- run_scatter_o
+      prep_list[['run_sxs_cor_o']] <- run_sxs_cor_o
+      prep_list[['run_fxf_cor_o']] <- run_fxf_cor_o
+      prep_list[['run_pca_o']] <- run_pca_o
+      prep_list[['run_dist_t']] <- run_dist_t
+      prep_list[['run_scatter_t']] <- run_scatter_t
+      prep_list[['run_fxf_sxs_sf_t']] <- run_fxf_sxs_sf_t
+      prep_list[['run_pca_t']] <- run_pca_t
+      prep_list[['data_dir']] <- data_dir
+      
+      # Save the out list
+      if(save_list){
+        file_out = paste0(WD,'/data/20201103_PrepareData2Sites-outlist_steep.rds')
+        saveRDS(prep_list, file = file_out)
+      }
+      
+      # Run the primary analysis through source
+      if(run_source){
+        source('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201104_pass1a-metabolomics-site-specific-eda-analysis-file_steep.Rmd')
+      }
+      
+      if(render){
+        # Render the Primary Analysis
+        ##########################################################################
+        html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/site_comparisons'
+        html_file = paste0("20201104_named-site-comparison-",comp_id,'_',tissue,'_',nxp_out,'_',
+                         shared_runs_out,'_steep.html')
+        rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201104_pass1a-metabolomics-site-specific-eda-analysis-file_steep.Rmd',
+        output_format = "html_document",
+        output_file = html_file,
+        output_dir = html_dir, 
+        quiet = TRUE,
+        clean = TRUE) 
+        #print(paste0('Output File: ', html_file))
+        print(paste0('Output Files PATH: ', html_dir))
+      }
+      
+      # Return the out list
+      prep_list
 }
+```
 
-# Reorder the correlation matrix
-cormat <- reorder_cormat(cor1)
+### Comparison of Samples and Metabolites Shared Between (2) Sites (Before and After Normalization)
+#### These analyses are rendered in adjunct HTML files in 20200915_metabolomics-pass1a/reports/site_comparisons
+<!-- # ```{r Automation: Comparison of Samples and Metabolites Shared Between Sites, echo=TRUE, fig.show='hide', message=TRUE, warning=TRUE, results='hide'} -->
+```{r Automation: Comparison of Samples and Metabolites Shared Between Sites, echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+# DEV
+  #######################
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+run_df <- df_shared_casrun %>%
+  filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUN_N == 2)
+#run_id <- df_shared_casrun[1,'COMP_ID']
 
-# Melt the correlation matrix
-melted_cormat <- melt(cormat, na.rm = TRUE)
+# Define tissues
+# tissues <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+#     filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+#     filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
 
-################################################################################
-####################### All Shared Samples and Metabolites #####################
-################################################################################
-
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-
-# Widen the datafrmae back to matrix
-cormat1 <- melted_cormat %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat1) <- cormat1$Var1
-cormat1 <- cormat1 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat1 <- cormat1[sort(rownames(cormat1)),sort(colnames(cormat1))]
-
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-paletteLength <- 1000
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
+# DEV
+############
+comp_ids <- c('0001','0002','0003','0004','0005','0006','0007','0008','0009')
 
 
-# Create the heatmap annotation
-row.names(cormat1)
-ann_df <- countdata_df %>%
+comp_ids <- c('0005')
+norm_orders <- c('feat_sam','sam_feat')
+norm_logs <- c('log10')
+sam_norm_centers <- c('none','median','mean')
+sam_norm_scales <- c('none','sd','iqr')
+feat_norm_centers <- c('none','median','mean')
+feat_norm_scales <- c('none','sd','iqr')
+ptm <- proc.time()
+i <- 1
+norm_all_df <- data.frame()
+# Prepare Data for the 2 site comparison, then run comparisons
+for(comp_id in comp_ids){
+for(norm_order in norm_orders){
+for(norm_log in norm_logs){
+for(sam_norm_center in sam_norm_centers){
+for(sam_norm_scale in sam_norm_scales){
+for(feat_norm_center in feat_norm_centers){
+for(feat_norm_scale in feat_norm_scales){
+# Print iteration
+print(paste(comp_id, norm_order, norm_log, sam_norm_center, sam_norm_scale,
+              feat_norm_center, feat_norm_scale, sep = ' ,'))
+# Defense against feature and sample normalization
+# Conditionals about normalization
+if(sam_norm_center %in% c('median','mean') |
+   sam_norm_scale %in% c('sd','iqr')){
+  run_sam_norm <- T
+}else{
+  run_sam_norm <- F
+}
+if(feat_norm_center %in% c('median','mean') |
+   feat_norm_scale %in% c('sd','iqr')){
+  run_feat_norm <- T
+}else{
+  run_feat_norm <- F
+}
+if(norm_order == 'none' & run_sam_norm == T & run_feat_norm == T){
+  next
+}else if(norm_order == 'sam_feat' & run_sam_norm == F & run_feat_norm == F){
+  next
+}else if(norm_order == 'sam_feat' & run_sam_norm == F & run_feat_norm == T){
+  next
+}else if(norm_order == 'feat_sam' & run_sam_norm == F & run_feat_norm == F){
+  next
+}else if(norm_order == 'feat_sam' & run_sam_norm == T & run_feat_norm == F){
+  next
+}
+  
+#print(out_df)
+# Run the analyses
+print(i)
+prep_list <- PrepareData2Sites(render = T,
+                              save_list = T,
+                              run_source = F,
+                              comp_id = comp_id, 
+                              run_df = run_df, 
+                              data_dir = paste0(WD,"/data/site_comparisons/",shared_runs_out),
+                              count_df = countdata_df, 
+                              named = "named", 
+                              all_met_df = all_met_df,
+                              run_zero = T,
+                              zero_rm = 0.95,
+                              na_rm = 0.6,
+                              report_version = 'v2a',
+                              run_impute = T,
+                              imputation_method = 'half-min',
+                              norm_order = norm_order,
+                              norm_log = norm_log,
+                              sam_norm_center = sam_norm_center,
+                              sam_norm_scale = sam_norm_scale,
+                              feat_norm_center = feat_norm_center,
+                              feat_norm_scale = feat_norm_scale,
+                              run_sxs_cor_t = T,
+                              run_fxf_cor_t = T,
+                              run_boxplot_o = F,
+                              run_boxplot_t = F,
+                              run_save_mat_t = F,
+                              run_dist_o = F,
+                              run_scatter_o = F,
+                              run_sxs_cor_o = F,
+                              run_fxf_cor_o = F,
+                              run_pca_o = F,
+                              run_dist_t = F,
+                              run_scatter_t = F,
+                              run_fxf_sxs_sf_t = F,
+                              run_pca_t = F)
+
+# Reload variables into environment
+tissue <- prep_list[['tissue']]
+
+# Read in the sxs ranks
+r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-rank-df_steep.rds")
+sxs_rank_df <- readRDS(file = r_file)
+sxs_rank <- sxs_rank_df %>% select(RANK_P) %>% unlist() %>% mean()
+# Read in the fxf ranks
+r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-normalized-rank-df_steep.rds")
+fxf_rank_df <- readRDS(file = r_file)
+fxf_rank <- fxf_rank_df %>% select(RANK_P) %>% unlist() %>% mean()
+# Place in dataframe
+out_df <- data.frame(TISSUE = tissue,
+                     NORM_ORDER = norm_order,
+                     N_LOG = norm_log,
+                     S_CENTER = sam_norm_center,
+                     S_SCALE = sam_norm_scale,
+                     F_CENTER = feat_norm_center,
+                     F_SCALE = feat_norm_scale,
+                     SXS_RANK <- sxs_rank,
+                     FXF_RANK <- fxf_rank)
+norm_all_df <- rbind(norm_all_df, out_df)
+i <- i + 1
+}}}}}}}
+proc.time() - ptm
+# norm_all_df <- norm_all_df %>%
+#   arrange(desc(SXS_RANK), desc(FXF_RANK))
+
+# Save the ranks based on QC decisions
+#ranks_dec_file <- paste0(WD,'/data/20201103_ranks-sxs-fxf-qc-decisions-',tissue,'-brutforce_steep.rds')
+#saveRDS(norm_all_df, file = ranks_dec_file)
+
+i <- 1
+for(comp_id in comp_ids){
+for(norm_order in norm_orders){
+for(norm_log in norm_logs){
+for(sam_norm_center in sam_norm_centers){
+for(sam_norm_scale in sam_norm_scales){
+for(feat_norm_center in feat_norm_centers){
+for(feat_norm_scale in feat_norm_scales){
+  print(i)
+  i <- i + 1
+}}}}}}}
+
+names(norm_all_df)[8] <- 'SXS_RANK'
+names(norm_all_df)[9] <- 'FXF_RANK'
+norm_all_df %>%
+  rowwise() %>%
+  mutate(TOTAL_RANK = mean(c(SXS_RANK, FXF_RANK), na.rm = T)) %>%
   ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unite(METABOLITE_NAME, STUDY_INSTITUTE_METAB_FAMILY, col = "METAB_STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-  #select(METAB_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE,TECHNOLOGY) %>%
-  select(METAB_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE) %>%
-  unique() %>%
-  column_to_rownames(var = "METAB_STUDY_INSTITUTE_METAB_FAMILY")
-ann_df <- ann_df[row.names(cormat1),]
+  arrange(desc(TOTAL_RANK))
 
-# newCols <- colorRampPalette(grDevices::rainbow(length(unique(ann_df))))
-# mycolors <- newCols(length(unique(ann_df)))
-# names(mycolors) <- unique(ann_df)
-# ann_colors <- list(category = mycolors)
 
-# Plot the heatmap
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-myColor2 <- colorRampPalette(c("blue", "red"))(paletteLength)
-p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, 
-                  cluster_rows = T, cluster_cols = T,fontsize = 6,
-                  annotation_row=ann_df, annotation_col=ann_df)
-p_out2 <- pheatmap(cormat1, color=myColor2, breaks=myBreaks, 
-                   cluster_rows = T, cluster_cols = T,fontsize = 6,
-                   annotation_row=ann_df, annotation_col=ann_df)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201103_metabolite-by-metabolite-correlation-heatmap',runs,'_steep.pdf')
-heatmap_file2 <- paste0(WD, '/plots/20201103_metabolite-by-metabolite-correlation-heatmap',runs,'-RB_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-save_pheatmap_pdf(p_out2, heatmap_file2, width = 10, height = 10)
+```
 
-print(paste0("Heatmap saved to: ",heatmap_file))
 
+
+
+
+
+
+
+
+
+
+
+### Visualize the Rank dotplot
+```{r}
+tissues <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
+
+# MXM
 ################################################################################
-####################### Only Reciprocal Pairs ##################################
-################################################################################
+i <- 1
+plot_list <- list()
+tis_mxm_rank_df <- data.frame()
+for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_rppos"){
+  for(tissue in tissues){
+    print(tissue)
+    shared_runs_out <- shared_run_vec %>% 
+          str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_') %>% str_replace_all(';','_')
+    data_dir <- paste0(WD,"/data/site_comparisons/",shared_runs_out)
+    mxm_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-normalized-rank-df_steep.rds")
+    mxm_rank_df <- readRDS(mxm_file)
+    tis_mxm_rank_df <- rbind(tis_mxm_rank_df, mxm_rank_df)
+    rank_mxm_m<- (mxm_rank_df$ROW_RANK+mxm_rank_df$COL_RANK)/(nrow(mxm_rank_df)*2)
+    base::plot(rep(1,nrow(mxm_rank_df)),pch=16,cex=(rank_mxm_m-0.4)*2.5)
+  }
+}
+ tis_mxm_rank_df
+# Tissue counts to join
+ tis_mxm_join <- tis_mxm_rank_df %>%
+  group_by(TISSUE) %>%
+   summarise(n = n())
 
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-melted_cormat2 <- melted_cormat 
-# Widen the datafrmae back to matrix
-cormat2 <- melted_cormat2 %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat2) <- cormat2$Var1
-cormat2 <- cormat2 %>%
-  select(-Var1) %>%
+ ranks_mxm_out <- tis_mxm_rank_df %>%
+  left_join(y = tis_mxm_join, by = "TISSUE") %>%
+  group_by(TISSUE) %>%
+  mutate(RANK_P = RANK/n)
+ txt_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-mxm-normalized-rank-excel_steep.txt")
+write.table(ranks_mxm_out, file = txt_file, sep = '\t', row.names = T, quote = F)
+
+ranks_mxm_out %>% 
+   filter(TISSUE == 'gastrocnemius') %>%
+   arrange(desc(RANK_P))
+
+# Collect metabolite reproducibility metric per tissue
+ranks_mxm_out %>%
+   group_by(TISSUE) %>%
+   mutate(TISSUE_METRIC = mean(RANK_P)) %>%
+   select(TISSUE, TISSUE_METRIC) %>%
+   unique() %>%
+  ungroup %>%
+  arrange(desc(TISSUE_METRIC))
+
+mxm_rank_cor <- tis_mxm_rank_df %>%
+  left_join(y = tis_mxm_join, by = "TISSUE") %>%
+  group_by(TISSUE) %>%
+  mutate(RANK_P = RANK/n) %>%
+  select(TISSUE, METABOLITE_NAME, RANK_P) %>%
+  pivot_wider(names_from = METABOLITE_NAME, values_from = RANK_P) %>%
+  column_to_rownames(var = "TISSUE") %>%
   as.matrix()
-cormat2 <- cormat2[sort(rownames(cormat2)),sort(colnames(cormat2))]
+
+# # Collect the metabolite order from gastrocnemius
+# row_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-rows_steep.rds")
+# gr <- readRDS(file = row_file) 
 
 # Orient the colors and breaks
 paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+myColor <- colorRampPalette(c("white", "lightcoral", "red"))(paletteLength)
 # length(breaks) == length(paletteLength) + 1
 # use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(0, 0.8, length.out=ceiling(paletteLength/2) + 1), 
+              seq(0.8001, 1, length.out=floor(paletteLength/2)))
+# length(breaks) == length(paletteLength) + 1
+
+p1 <- pheatmap(mxm_rank_cor, color=myColor, breaks=myBreaks,
+              cluster_rows = T, cluster_cols = F,fontsize = 8,
+              show_rownames = T, show_colnames = T,
+              #annotation_colors = ann_colors,
+              #annotation_row = row_ann_df,
+              #annotation_col = col_ann_df,
+              #annotation_names_col = T, annotation_names_row = T,
+              annotation_legend = F, 
+              legend = T, drop_levels = F)
+r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-mxm-normalized-rank-mtx_steep.rds")
+txt_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-mxm-normalized-rank-mtx_steep.txt")
+write.table(mxm_rank_cor, file = txt_file, sep = '\t', row.names = T, quote = F)
+saveRDS(mxm_rank_cor ,r_file)
+
+tissues <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
 
 
-# Plot the heatmap
-myColor2 <- colorRampPalette(c("blue", "red"))(paletteLength)
-p_out <- pheatmap(cormat2, color=myColor, breaks=myBreaks, 
-                  cluster_rows = F, cluster_cols = F,fontsize = 6,
-                  annotation_row=ann_df, annotation_col=ann_df)
-p_out2 <- pheatmap(cormat1, color=myColor2, breaks=myBreaks, 
-                   cluster_rows = F, cluster_cols = F,fontsize = 6,
-                   annotation_row=ann_df, annotation_col=ann_df)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201103_metabolite-by-metabolite-correlation-heatmap-',runs,'-reciprocal_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-# The plot needs to be saved for viewing (too large)
-heatmap_file2 <- paste0(WD, '/plots/20201103_metabolite-by-metabolite-correlation-heatmap-',runs,'-reciprocal-RB_steep.pdf')
-save_pheatmap_pdf(p_out2, heatmap_file2, width = 10, height = 10)
+# SXS
+################################################################################
+i <- 1
+tissue <- 'gastrocnemeius'
+tis_sxs_rank_df <- data.frame()
+for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_rppos"){
+  for(tissue in tissues){
+    print(tissue)
+    shared_runs_out <- shared_run_vec %>% 
+          str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_') %>% str_replace_all(';','_')
+    data_dir <- paste0(WD,"/data/site_comparisons/",shared_runs_out)
+    sxs_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-rank-df_steep.rds")
+    sxs_rank_df <- readRDS(sxs_file)
+    tis_sxs_rank_df <- rbind(tis_sxs_rank_df, sxs_rank_df)
+    rank_sxs_m<- (sxs_rank_df$ROW_RANK+sxs_rank_df$COL_RANK)/(nrow(sxs_rank_df)*2)
+    base::plot(rep(1,nrow(sxs_rank_df)),pch=16,cex=(rank_sxs_m-0.4)*2.5)
+  }
+}
+ tis_sxs_rank_df
+
+ ranks_sxs_out %>%
+   filter(TISSUE == 'gastrocnemius') %>%
+   arrange(RANK_P)
+ 
+ # Tissue counts to join
+ tis_sxs_join <- tis_sxs_rank_df %>%
+  group_by(TISSUE) %>%
+   summarise(n = n())
+
+pheno_join <- pheno_df %>% select(pid, labelid)
+ 
+ranks_sxs_out <- tis_sxs_rank_df %>%
+  left_join(y = tis_sxs_join, by = "TISSUE") %>%
+  left_join(y = pheno_join, by = "labelid") %>%
+  group_by(TISSUE) %>%
+  mutate(RANK_P = RANK/n) %>%
+   ungroup() %>%
+  select(labelid,pid,TISSUE,RUN,n,ROW_RANK,COL_RANK,RANK,RANK_P) %>%
+  unique()
+ txt_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-sxs-normalized-rank-excel_steep.txt")
+write.table(ranks_sxs_out, file = txt_file, sep = '\t', row.names = T, quote = F)
+
+# Collect metabolite reproducibility metric per tissue
+ranks_sxs_out %>%
+   group_by(TISSUE) %>%
+   mutate(TISSUE_METRIC = mean(RANK_P)) %>%
+   select(TISSUE, TISSUE_METRIC) %>%
+   unique() %>%
+  ungroup %>%
+  arrange(desc(TISSUE_METRIC))
+
+sxs_rank_labelid <- tis_sxs_rank_df %>%
+  left_join(y = tis_sxs_join, by = "TISSUE") %>%
+  group_by(TISSUE) %>%
+  mutate(RANK_P = RANK/n) %>%
+  ungroup() %>%
+  select(TISSUE, labelid, RANK_P) %>%
+  unique()
 
 
-print(paste0("Heatmap saved to: ",heatmap_file))
+sxs_rank_cor <- sxs_rank_labelid %>%
+  left_join(y = pheno_join, by = "labelid") %>%
+  select(-labelid) %>%
+  unique() %>%
+  pivot_wider(names_from = pid, values_from = RANK_P) %>%
+  column_to_rownames(var = "TISSUE") %>%
+  as.matrix()
+
+# # Collect the metabolite order from gastrocnemius
+# row_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-rows_steep.rds")
+# gr <- readRDS(file = row_file) 
+
+# Orient the colors and breaks
+paletteLength <- 1000
+myColor <- colorRampPalette(c("white", "lightcoral", "red"))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(0, 0.8, length.out=ceiling(paletteLength/2) + 1), 
+              seq(0.8001, 1, length.out=floor(paletteLength/2)))
+# length(breaks) == length(paletteLength) + 1
+
+p1 <- pheatmap(sxs_rank_cor, color=myColor, breaks=myBreaks,
+              cluster_rows = T, cluster_cols = F,fontsize = 8,
+              show_rownames = T, show_colnames = T,
+              #annotation_colors = ann_colors,
+              #annotation_row = row_ann_df,
+              #annotation_col = col_ann_df,
+              #annotation_names_col = T, annotation_names_row = T,
+              annotation_legend = F, 
+              legend = T, drop_levels = F)
+r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-sxs-normalized-rank-mtx_steep.rds")
+txt_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-all-tissues-sxs-normalized-rank-mtx_steep.txt")
+write.table(sxs_rank_cor, file = txt_file, sep = '\t', row.names = T, quote = F)
+saveRDS(sxs_rank_cor ,r_file)
+
+
+
 ```
 
 
-# Plot the scatterplots of metabolites
-```{r Scatterplots}
+### Visualize High Dimension Plots Between (2) Sites: Stratified by Tissue
+###### Plots are saved in intermediate directories under identical names. Locate, rename, and combine them in intuitive manner.
+``` {r Visualize the Major Dimensions of the Metabolomics Pass1a (6mo) Hypercube}
 
-# Assign Variables
-################################################################################
-run_n <- 2
-cas_n <- 2
-tissue <- 'liver'
-runs <- "Duke University_ac;Broad Institute_hilicpos"
-shared_vals <- df_shared_casrun %>%
-  filter(TISSUE == tissue) %>%
-  filter(RUNS == runs)
-# Shared metabolites
-shared_mets <- shared_vals$METABOLITES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared samples
-shared_sams <- shared_vals$SAMPLES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared Runs
-shared_runs <- shared_vals$RUNS %>% unlist() %>% str_split(';') %>% unlist()
+# Strategy:
+################
+# Start with: Broad Institute_hilicpos;University of Michigan_rppos
 
-# Collect the samples (remove QCs) & join sample order
-sample_join <- countdata_df %>%
+# Collect Variables
+#########################
+# Types of plots
+plot_types <- c("boxplot-original","density-original","mxm-original",
+                "sxs-original","pca-original-0","pca-original-1","pca-original-2",
+                "boxplot-normalized","density-normalized","mxm-normalized",
+                "sxs-normalized","sxs-normalized-es","sxs-normalized-se",
+                "pca-normalized-0","pca-normalized-1","pca-normalized-2")
+plot_types <-c("sxs-normalized-se","mxm-normalized")
+plot_types <-c("mxm-normalized")
+# Types of data
+data_types <- c("sxs-normalized-rank-df","mxm-normalized-rank-df")
+
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+shared_runs_vec <- df_shared_casrun %>% filter(RUN_N == 2) %>% 
+  filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+  select(RUNS) %>% unlist() %>% as.character() %>% unique()
+
+# DEV
+############
+# plot_type <- "sxs-normalized-rank-df"
+# tissue <- "brown-adipose"
+# shared_run_vec <- "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines"
+#shared_run_vec <- "Broad Institute_hilicpos;University of Michigan_rppos"
+
+  # Broad Institute_hilicpos;University of Michigan_ionpneg
+  # vs
+  # Duke University_nuc;University of Michigan_ionpneg
+
+# Iterate through plot type (across tissues)
+#for(shared_run_vec in shared_runs_vec[1:18]){
+for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_rppos"){
+  print(shared_run_vec)
+  # Adjust name
+  shared_runs <- shared_run_vec %>% str_split(';') %>% unlist()
+  shared_run_out <- shared_run_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';','_') %>% tolower()
+  if(T){
+    # Create the output directory
+    out_dir <- paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out)
+    cmd <- paste0('mkdir -p ',out_dir)
+    system(cmd)
+  }
+  
+  # Collect tissues based on frequency
+  tissues <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
+  for(plot_type in plot_types){
+      print(plot_type)
+      # Iterate through tissues
+      i <- 1
+      plot_list <- list()
+      self_list1 <- list()
+      self_list2 <- list()
+      #tissue <- tissues[2]
+      for(tissue in tissues){
+          print(tissue)
+          # Load the object into memory
+        out_runs1 <- shared_runs[1] %>% str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_')
+        out_runs2 <- shared_runs[2] %>% str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_')
+          data_dir <- paste0(WD,"/data/site_comparisons/",shared_run_out)
+          p_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-",plot_type,"_steep.rds")
+          s1_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-normalized-self-cor-",out_runs1,"_steep.rds")
+          s2_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-mxm-normalized-self-cor-",out_runs2,"_steep.rds")
+          if(plot_type %in% c('mxm-original', 'mxm-normalized','sxs-original', 'sxs-normalized',
+                              'sxs-normalized-se','sxs-normalized-es')){
+            phm <- readRDS(p_file)
+            shm1 <- readRDS(s1_file)
+            shm2 <- readRDS(s2_file)
+            plot_list[[i]] <- phm$gtable
+            self_list1[[i]] <- shm1$gtable
+            self_list2[[i]] <- shm2$gtable
+          }else{
+            plot_list[[i]] <- readRDS(p_file)
+            shm1 <- readRDS(s1_file)
+            shm2 <- readRDS(s2_file)
+          }
+          i <- i + 1
+          }
+   # Save the plots in a grid
+    if(length(plot_list) == 1){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 1
+      w <- 10
+      h <- 10
+    }else if(length(plot_list) == 2){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 2
+      w <- 20
+      h <- 30
+    }else if(length(plot_list) == 3){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 3
+      w <- 30
+      h <- 10
+    }else if(length(plot_list) == 4){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 2
+      w <- 20
+      h <- 20
+    }else if(length(plot_list) == 5){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 5
+      w <- 50
+      h <- 10
+    }else if(length(plot_list) == 6){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 3
+      w <- 30
+      h <- 20
+    }else if(length(plot_list) == 7) {
+      print(length(plot_list))
+      nr <- 1
+      nc <- 7
+      w <- 49
+      h <- 7
+    }else if(length(plot_list) == 8){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 4
+      w <- 20
+      h <- 40
+    }else if(length(plot_list) %in% c(9)){
+      print(length(plot_list))
+      nr <- 3
+      nc <- 3
+      w <- 30
+      h <- 30
+    }
+      
+      
+  plots_out <- marrangeGrob(plot_list, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(plot_list), nr, nc, TRUE))
+  self_out1 <- marrangeGrob(self_list1, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(self_list1), nr, nc, TRUE))
+  self_out2 <- marrangeGrob(self_list2, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(self_list2), nr, nc, TRUE))
+  if(T){
+    plot_dir <- paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out)
+    cmd <- paste0('mkdir -p ',plot_dir)
+    system(cmd)
+    ggsave(paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out,'/20201104_pass1a-metabolomics-',plot_type,'_steep.bmp'), plots_out,  width=w, height=h, 
+device = "bmp", dpi = 72)
+    ggsave(paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out,'/20201104_pass1a-metabolomics-',plot_type,
+                  '-',out_runs1,'-selfself_steep.bmp'), 
+           self_out1,  width=w, height=h, device = "bmp", dpi = 72)
+    ggsave(paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out,'/20201104_pass1a-metabolomics-',plot_type,
+                  '-',out_runs2,'-selfself_steep.bmp'), 
+           self_out2,  width=w, height=h, device = "bmp", dpi = 72)
+    
+  }
+  }
+}
+
+```
+
+### Comparison of Samples and Metabolites Shared Between (2) Sites (Priority Granted to Within Tissue)
+#### These analyses are rendered in adjunct HTML files in 20200915_metabolomics-pass1a/reports/site_comparisons
+<!-- # ```{r Automation: Comparison of Samples and Metabolites Shared Between Sites, echo=TRUE, fig.show='hide', message=TRUE, warning=TRUE, results='hide'} -->
+```{r Automation: Comparison of Samples and Metabolites Shared Between Sites, echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+
+#DEV
+###########
+# shared_runs_vec <- df_shared_casrun %>% filter(RUN_N == 2) %>% select(RUNS) %>% unlist() %>% as.character() %>% unique()
+#shared_tis_vec <- shared_tissues_vec[3]
+#row <- 3
+
+# Mayo comparisons
+#shared_runs_vec[str_count(shared_runs_vec, "Mayo") == 2]
+#shared_runs_vec[grepl("Broad", shared_runs_vec)]
+#shared_run_vec <- "Broad Institute_hilicpos;University of Michigan_rppos"
+if(T){
+  # Comparisons ranked by number of metabolites shared in at least 1 tissue
+  shared_tissues_vec <- df_shared_casrun %>% 
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUN_N == 2) %>%
+    select(TISSUE) %>% unlist() %>% as.character() %>% unique()
+  
+  for(shared_tis_vec in shared_tissues_vec[c(3,4,5,6,8,9)]){
+  #for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_rppos"){
+    print(shared_tis_vec)
+  #for(shared_run_vec in shared_runs_vec[str_count(shared_runs_vec, "Mayo") == 2]){
+    df_shared_casrun2 <- df_shared_casrun %>%
+      filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+      filter(RUN_N == 2)
+    rows <- df_shared_casrun2 %>%
+      rownames_to_column('row') %>%
+      filter(TISSUE == shared_tis_vec) %>%
+      select(row) %>% unlist() %>% as.numeric()
+    rows <- rows[!is.na(rows)]
+    for(row in rows[1:18]){
+      #for(row in 1:nrow(df_shared_casrun2)){
+      RUN_N <- df_shared_casrun2[row, "RUN_N"] %>% unlist() %>% as.numeric()
+      if(RUN_N == 2){
+        print(row)
+        # Variables
+        ##############################################################################
+        #df_shared_casrun2[row,]
+        tissue <- df_shared_casrun2[row, "TISSUE"] %>% unlist() %>% as.character()
+        print(tissue)
+        shared_runs <- df_shared_casrun2[row, "RUNS"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        shared_mets <- df_shared_casrun2[row, "METABOLITES_RUN"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        shared_sams <- df_shared_casrun2[row, "SAMPLES_RUN"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        shared_runs_plot <- df_shared_casrun2[row, "RUNS"] %>% unlist() %>% as.character() %>%
+          str_replace_all(';',' \n')
+        nxp_plot <- paste0(as.character(length(shared_sams)),'x',as.character(length(shared_mets)))
+        shared_runs_plot <- paste0(shared_runs_plot, ' (',nxp_plot,')')
+        # shared_pids <- df_shared_casrun2[row, "PIDS_RUN"] %>% unlist() %>% as.character() %>% 
+        #   str_split(pattern = ';') %>% unlist()
+        named <- "named"
+        shared_runs_out <- shared_runs %>% 
+          str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_')
+        nxp <- paste0(as.character(length(shared_sams)),' x ',as.character(length(shared_mets)))
+        nxp_out <- nxp %>% str_replace_all(' ', '_')
+        comp_id <- df_shared_casrun2[row, "COMP_ID"] %>% unlist() %>% as.character()
+        
+      # Subset Data
+      ################################################################################
+      # Collect abundances in long format
+      plot_df <- countdata_df %>%
+        ungroup() %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% shared_mets) %>%
+        filter(labelid %in% shared_sams)
+      
+      # Collect abundances in long format for correlation matrices
+      cor_df <- countdata_df %>%
+        ungroup() %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% master_met) %>%
+        filter(pid %in% master_pid) %>%
+        #filter(METABOLITE_NAME %in% shared_mets) %>%
+        #filter(labelid %in% shared_sams) %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
+      # Collect abundances in long "joined" format
+      plot_join_df <- countdata_df %>%
         ungroup() %>%
         unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
         filter(TISSUE == tissue) %>%
         filter(NAMED == named) %>%
         filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-        unnest(SAMPLE_DATA) %>%
-        filter(sample_type == 'Sample') %>%
-        select(sample_id, sample_order)
-
-# Subset the data for sites to compare (scatterplots)
-###################################################
-norm_join_list <- countdata_df %>%
-  ungroup() %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unnest(COUNT_DATA) %>%
-  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  # unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
-  # mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-  #                                    grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-  #                              grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, labelid, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(column_to_rownames, var = "labelid") %>%
-  map(as.matrix) %>%
-  map(AutoScaleMatrix) %>%
-  map(as.data.frame) %>%
-  map(rownames_to_column, var = "labelid") %>%
-  purrr::map(tidyr::pivot_longer, 
-      names_to = 'METABOLITE_NAME', 
-      values_to = 'VALUE', 
-      cols = all_of(shared_mets))
-  # map(mutate, REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
-  #                                    grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
-  #                                   grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
-
-norm_join_df1 <- norm_join_list[[1]]
-names(norm_join_df1)[3] <- shared_runs[1]
-norm_join_df2 <- norm_join_list[[2]]
-names(norm_join_df2)[3] <- shared_runs[2]
-
-norm_join_df <- left_join(norm_join_df1, norm_join_df2, by = c("labelid","METABOLITE_NAME"))
-
-#sm1 <- shared_mets[1:20]
-#sm2 <- shared_mets[21:52]
-
-# Plot scatter plots ordered by sample (include R2 values)
-lm_df <- norm_join_df %>%
-  rename(name = METABOLITE_NAME) %>%
-  rename(x = shared_runs[1]) %>%
-  rename(y = shared_runs[2])
-# Iterate through each of the shared metabolites to collect summary info about their correlations
-r2_df <- data.frame()
-for(metab in shared_mets){
-  met_df <- lm_df %>%
-    filter(name == metab)
-  r2_df <- rbind(r2_df, lm_eqn(met_df))
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% shared_mets) %>%
+        filter(labelid %in% shared_sams) %>%
+        select(STUDY_INSTITUTE_METAB_FAMILY,METABOLITE_NAME,labelid,VALUE) %>%
+        mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+        map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+      
+      # The normalized counts
+      norm_df <- plot_df %>%
+        unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, 
+              col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", remove = F,sep =';') %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(select, labelid_STUDY_INSTITUTE_METAB_FAMILY, METABOLITE_NAME, VALUE) %>%
+        map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+        map(column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(as.matrix) %>%
+        map(AutoScaleMatrix) %>%
+        map(as.data.frame) %>%
+        map(rownames_to_column, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets)) %>%
+        map(separate, col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", 
+            into = c("labelid", "STUDY_INSTITUTE_METAB_FAMILY"), sep =';') %>%
+        bind_rows()
+      # Collect normalized abundances in long "joined" format
+      norm_join_df <- plot_df %>%
+        unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, 
+              col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", remove = F,sep =';') %>%
+        select(STUDY_INSTITUTE_METAB_FAMILY, labelid_STUDY_INSTITUTE_METAB_FAMILY, 
+               METABOLITE_NAME, VALUE) %>%
+        mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(select, -STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+        map(column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(as.matrix) %>%
+        map(AutoScaleMatrix) %>%
+        map(as.data.frame) %>%
+        map(rownames_to_column, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets)) %>%
+        map(separate, col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", 
+            into = c("labelid", "STUDY_INSTITUTE_METAB_FAMILY"), sep =';') %>%
+        map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+        map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+        
+      # Render the Primary Analysis
+        ##########################################################################
+        html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/site_comparisons'
+        html_file = paste0("20201104_named-site-comparison-",comp_id,'_',tissue,'_',nxp_out,'_',
+                         shared_runs_out,'_steep.html')
+        rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201104_pass1a-metabolomics-site-specific-eda-analysis-file_steep.Rmd',
+        output_format = "html_document",
+        output_file = html_file,
+        output_dir = html_dir, 
+        quiet = TRUE,
+        clean = TRUE) 
+        #print(paste0('Output File: ', html_file))
+        }
+      }
+  }
 }
-
-# Display summaries
-met_r2_df <- r2_df %>%
-  arrange(METABOLITE) %>%
-  select(METABOLITE,R2) %>%
-  arrange(desc(R2))
-print(met_r2_df)
-# Collect the order of metabolites
-scat_met_order <- met_r2_df %>% select(METABOLITE) %>% unlist() %>% as.character()
-
-# Use this strategy if you'd like to seperate the number of metabolites displayed
-# r2_df1 <- r2_df %>%
-#   filter(METABOLITE %in% sm1) %>%
-#   arrange(METABOLITE) %>%
-#   select(METABOLITE,R2)
-# print(r2_df1)
-# r2_df2 <- r2_df %>%
-#   filter(METABOLITE %in% sm2) %>%
-#   arrange(METABOLITE) %>%
-#   select(METABOLITE,R2)
-# print(r2_df2)
-
-# Plot scatter plots
-################################################################################
-p1 <- norm_join_df %>%
-  #filter(METABOLITE_NAME %in% sm1) %>%
-  mutate(METABOLITE_NAME = factor(METABOLITE_NAME, levels = scat_met_order)) %>%
-  ggplot(aes(x = !!sym(shared_runs[1]), y = !!sym(shared_runs[2])), color = ) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", size = 1) +
-  geom_abline(linetype="dashed") +
-  facet_wrap(~ METABOLITE_NAME) +
-  expand_limits(x = 0, y = 0) +
-  labs(title=paste0(tissue,' ',runs,":\nNormalized Metabolite Abundances")) +
-  coord_fixed(ratio=1)
-# Use strategy to visualize the second half of metabolites if metabolites split for visual convenience
-# p2 <- norm_join_df %>%
-#   #filter(METABOLITE_NAME %in% sm2) %>%
-#   ggplot(aes(x = !!sym(shared_runs[1]), y = !!sym(shared_runs[2])), color = ) +
-#   geom_point(alpha = 0.5) +
-#   geom_smooth(method = "lm", size = 1) +
-#   geom_abline(linetype="dashed") +
-#   facet_wrap(~ METABOLITE_NAME) +
-#   expand_limits(x = 0, y = 0) +
-#   labs(title=paste0(tissue,' ',runs,":\nNormalized Metabolite Abundances")) +
-#   coord_fixed(ratio=1)
-#pdf(paste0(WD,'/plots/20201103_site-comparison-scatterplots_steep.pdf'))
-plot(p1)
-#dev.off()
-#plot(p2)
-
+#}
+print(paste0('Output Files PATH: ', html_dir))
 ```
 
+### Visualize High Dimension Plots Between (2) Sites: Stratified by RUN (within tissue)
+###### Plots are saved in intermediate directories under identical names. Locate, rename, and combine them in intuitive manner.
+``` {r Visualize the Major Dimensions of the Metabolomics Pass1a (6mo) Hypercube}
 
-# Plot a Sample by Sample Correlation Matrix (shared (shared == all) samples and shared metabolites)
-```{r Sample by Sample Correlations}
-################################################################################
-####################### Sample by Sample Correlations ##########################
-################################################################################
+# Strategy:
+################
+# Start with: Broad Institute_hilicpos;University of Michigan_rppos
 
-# Assign Variables
-################################################################################
-run_n <- 2
-cas_n <- 2
-tissue <- 'liver'
-runs <- "Duke University_ac;Broad Institute_hilicpos"
-named <- "named"
-shared_vals <- df_shared_casrun %>%
-  filter(TISSUE == tissue) %>%
-  filter(RUNS == runs)
-# Shared metabolites
-shared_mets <- shared_vals$METABOLITES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared samples
-shared_sams <- shared_vals$SAMPLES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared Runs
-shared_runs <- shared_vals$RUNS %>% unlist() %>% str_split(';') %>% unlist()
+# Collect Variables
+#########################
+# Types of plots
+plot_types <-c("sxs-normalized-es","sxs-normalized-se","mxm-normalized",
+               "pca-normalized-0","pca-normalized-1","pca-normalized-2")
+plot_types <-c("sxs-normalized-es","sxs-normalized-se","mxm-normalized")
+# Types of data
+data_types <- c("sxs-normalized-rank-df","mxm-normalized-rank-df")
 
-# Subset Data
-################################################################################
-# Original NxP Matrix
-x <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  #filter(STUDY_INSTITUTE_METAB_FAMILY %!in% "Mayo Clinic_ac" & !grepl("2$",viallabel)) %>%
-  unite(labelid,STUDY_INSTITUTE_METAB_FAMILY, 
-        col = labelid_STUDY_INSTITUTE_METAB_FAMILY, remove = F) %>%
-  #unite(METABOLITE_NAME,STUDY_INSTITUTE_METAB_FAMILY,col = METABOLITE_NAME_STUDY_INSTITUTE_METAB_FAMILY, remove = F) %>%
-  select(labelid_STUDY_INSTITUTE_METAB_FAMILY, METABOLITE_NAME, VALUE,STUDY_INSTITUTE_METAB_FAMILY) %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, -STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
-  map(tibble::column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
-  map(as.matrix) %>%
-  map(AutoScaleMatrix)
-shared_sam_mat <-  do.call(rbind,x) %>% 
-  t()
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+shared_tissues_vec <- df_shared_casrun %>% filter(RUN_N == 2) %>% 
+  filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+  select(TISSUE) %>% unlist() %>% as.character() %>% unique()
 
-mat1 <- x[[1]]
-mat2 <- x[[2]]
+# DEV
+############
+# plot_type <- "sxs-normalized-se"
+# shared_tis_vec <- "brown-adipose"
+# shared_run_vec <- "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines"
+#shared_run_vec <- "Broad Institute_hilicpos;University of Michigan_rppos"
 
-x <- str_split(row.names(mat1), pattern = "_") %>% map(head, n = 1) %>% unlist()
-y <- str_split(row.names(mat2), pattern = "_") %>% map(head, n = 1) %>% unlist()
-x==y
+  # Broad Institute_hilicpos;University of Michigan_ionpneg
+  # vs
+  # Duke University_nuc;University of Michigan_ionpneg
 
-saveRDS(mat2, file = paste0(WD,'/data/20201103_duke-ac-matrix-raw-4-jun_steep.RDS'))
-saveRDS(mat1, file = paste0(WD,'/data/20201103_broad-hilicpos-matrix-raw-4-jun_steep.RDS'))
-write.matrix(mat1, file = paste0(WD,'/data/20201103_broad-hilicpos-matrix-raw-4-jun_steep.txt'), sep = '\t')
-write.matrix(mat2, file = paste0(WD,'/data/20201103_duke-ac-matrix-raw-4-jun_steep.txt'), sep = '\t')
-
-# If Necessary: Perform KNN NA value adjustment
-################################################################################
-# Determine the proportion of missing data
-na_df <- data.frame()
-for(i in 1:ncol(shared_sam_mat)){
-  # Collect numeric vector
-  num_vec <- shared_sam_mat[,i] %>% unname()
-  df <- NumericSummaryStats(num_vec)
-  row.names(df) <- colnames(shared_sam_mat)[i]
-  na_df <- rbind(na_df, df)
-}
-na_df %>% select(NA_COUNT, NA_FREQ) %>%
-  filter(NA_FREQ > 0) %>%
-  arrange(desc(NA_FREQ))
-
-# Collect the major columns to be adjsuted
-imputed_cols10 <- na_df %>% select(NA_COUNT, NA_FREQ) %>%
-  filter(NA_FREQ > 0) %>%
-  arrange(desc(NA_FREQ)) %>%
-  head(n = 10) %>% row.names()
-
-# Use a knn method to impute missing values (need to come back and adjust)
-preProcValues <- preProcess(shared_sam_mat,
-                          method = c("knnImpute"),
-                          k = floor(sqrt(ncol(shared_sam_mat))),
-                          knnSummary = mean)
-# To get the normalizaed data
-shared_sam_mat <- predict(preProcValues, shared_sam_mat, na.action = na.pass)
-# To denormalize ("deautoscale")
-#shared_sam_mat <- ReverseAutoScaleMatrix(impute_shared_sam_mat)
-
-# Create an NxN Matrix of correlation
-if(Corr == 'Pearson'){
-        cor1 <- stats::cor(shared_sam_mat, method = 'pearson') %>% round(digits = 3)
-}else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(shared_sam_mat, method = 'spearman') %>% round(digits = 3)
-}
-
-# Melt the correlation matrix
-melted_cormat <- melt(cor1, na.rm = TRUE)
-
-################################################################################
-####################### All Shared Samples and Metabolites #####################
-################################################################################
-
-# Widen the dataframwe back to matrix
-cormat1 <- melted_cormat %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat1) <- cormat1$Var1
-cormat1 <- cormat1 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat1 <- cormat1[sort(rownames(cormat1)),sort(colnames(cormat1))]
-
-# Create the heatmap annotation
-row.names(cormat1)
-ann_df <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, col = "SAMPLE_STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-  #select(METAB_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE,TECHNOLOGY) %>%
-  select(SAMPLE_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE) %>%
-  unique() %>%
-  column_to_rownames(var = "SAMPLE_STUDY_INSTITUTE_METAB_FAMILY")
-ann_df <- ann_df[row.names(cormat1),]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1, na.rm = T), length.out=floor(paletteLength/2)))
-
-# Plot the heatmap
-p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, 
-                  cluster_rows = T, cluster_cols = T,fontsize = 6,
-                  annotation_row=ann_df, annotation_col=ann_df)
-#p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, cluster_rows = T, cluster_cols = T)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201103_sample-by-sample-correlation-heatmap',runs,'_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 10, height = 10)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-
-################################################################################
-####################### Unclustered ##################################
-################################################################################
-
-# Remove rows that compare metabolites from the same dataset, them remove redundent measurements
-melted_cormat2 <- melted_cormat
-
-# Widen the dataframwe back to matrix
-cormat2 <- melted_cormat2 %>%
-  pivot_wider(names_from = Var2, values_from = value) %>%
-  as.data.frame()
-row.names(cormat2) <- cormat2$Var1
-cormat2 <- cormat2 %>%
-  select(-Var1) %>%
-  as.matrix()
-cormat2 <- cormat2[sort(rownames(cormat2)),sort(colnames(cormat2))]
-cormat2 <- cormat2[grepl(shared_runs[1], rownames(cormat2)),grepl(shared_runs[2], colnames(cormat2))]
-
-# Orient the colors and breaks
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-
-ann_df <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == named) %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY", remove = F) %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, col = "SAMPLE_STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unite(CH_CHROMATOGRAPHY_TYPE,MS_TYPE,MS_ION_MODE, col = "TECHNOLOGY") %>%
-  #select(METAB_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE,TECHNOLOGY) %>%
-  select(SAMPLE_STUDY_INSTITUTE_METAB_FAMILY, METAB_FAMILY, STUDY_INSTITUTE) %>%
-  unique() %>%
-  column_to_rownames(var = "SAMPLE_STUDY_INSTITUTE_METAB_FAMILY")
-ann_df1 <- ann_df
-ann_df2 <- ann_df
-
-# Plot the heatmap
-p_out <- pheatmap(as.matrix(cormat2), color=myColor, breaks=myBreaks, 
-                  cluster_rows = F, cluster_cols = F,fontsize = 30,
-                  annotation_row=ann_df2)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201103_sample-by-sample-correlation-heatmap-shared-reciprocal_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 50, height = 50)
-
-print(paste0("Heatmap saved to: ",heatmap_file))
-```
-
-
-# PCA Analysis (Shared Samples and Shared Metabolites)
-```{r PCA ANalysis (NxP) Shared Samples and Shared Metabolites}
-
-
-# Plot a PCA with outliers labeled
-dim(shared_sam_mat)
-# shared_sam_mat <- shared_sam_mat %>%
-#   t() %>% AutoScaleMatrix() %>%
-#   t()
-pca <- prcomp(t(shared_sam_mat), scale. = F)
-percentVar <- pca$sdev^2/sum(pca$sdev^2)
-PC <- pca$x %>% as.data.frame()
-PC$labelid_cas <- as.character(row.names(pca$x))
-PC <- PC %>%
-  tidyr::separate(col = labelid_cas, into = c('labelid', 'cas'),
-  sep = "_", remove = T)
-# Join the phenotype data
-PC <- left_join(PC, pheno_df, by = 'labelid')
-
-p <- PC %>%
-        ggplot(aes(x = PC1, y = PC2, color=Key.anirandgroup, shape = cas)) +
-        geom_point(size = 3) +
-        ggtitle('Shared Samples and Shared Metabolites') + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
-        scale_color_manual(values=ec_colors) +
-        theme(aspect.ratio=1)
-plot(p)
-p0 <- PC %>%
-        ggplot(aes(x = PC1, y = PC2, color=cas)) +
-        geom_point(size = 3) +
-        ggtitle('Shared Samples and Shared Metabolites') + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
-        theme(aspect.ratio=1)
-p0
-
-p1 <- PC %>%
-        ggplot(aes(x = PC1, y = PC2, color=Key.anirandgroup, shape = cas)) +
-        geom_point(size = 3) +
-        ggtitle('Shared Samples and Shared Metabolites') + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
-        scale_color_manual(values=ec_colors) +
-        theme(aspect.ratio=1)
-p1
-PC$Registration.sex <- as.character(PC$Registration.sex)
-p2 <- PC %>%
-        ggplot(aes(x = PC1, y = PC2, color=Registration.sex, shape = cas)) +
-        geom_point(size = 3) +
-        ggtitle('Shared Samples and Shared Metabolites') + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
-        theme(aspect.ratio=1)
-p2
-
-
-p + ggforce::geom_mark_ellipse(aes(x=PC1, y=PC2,fill=cas, 
-                group=cas), color = 'black', alpha = 0.2)
-```
-
-
-
-# Visualize the NxP Matrix of Shared Metabolites and Samples Across CAS Sites for query of interest
--Raw Abundances
--NA values
--Zero Values
-```{r Shared Abundance Matrix}
-
-# Variable of interest
-run_n <- 2
-cas_n <- 2
-tissue <- 'liver'
-runs <- "Mayo Clinic_amines;Broad Institute_hilicpos;University of Michigan_ionpneg"
-shared_vals <- df_shared_casrun %>%
-  filter(TISSUE == tissue) %>%
-  filter(RUNS == runs)
-# Shared metabolites
-shared_mets <- shared_vals$METABOLITES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared samples
-shared_sams <- shared_vals$SAMPLES_RUN %>% unlist() %>% str_split(';') %>% unlist()
-# Shared Runs
-shared_runs <- shared_vals$RUNS %>% unlist() %>% str_split(';') %>% unlist()
-# Original NxP Matrix
-x <- countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
-  map(select, viallabel, METABOLITE_NAME, VALUE) %>%
-  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE)
-  #map(select, -viallabel)
-do.call(cbind, x)
-
-runs_out <- runs %>% str_replace_all(' ','-') %>%
-  str_replace_all('_','-') %>%
-  str_replace_all(';','-')
-
-countdata_df %>%
-  ungroup() %>%
-  filter(TISSUE == tissue) %>%
-  filter(NAMED == "named") %>%
-  mutate(IMF = paste0((STUDY_INSTITUTE %>% str_replace_all(' ','-') %>%
-  str_replace_all('_','-') %>% str_split('-') %>% map(substring, 1,1) %>%
-    map(paste, collapse = '')),'_',METAB_FAMILY)) %>%
-  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
-  unnest(COUNT_DATA) %>%
-  filter(METABOLITE_NAME %in% shared_mets) %>%
-  filter(labelid %in% shared_sams) %>%
-  filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
-  unite(METABOLITE_NAME,IMF, col = "METABOLITE_IMF") %>%
-  filter(DATASET == 'untargeted') %>%
-  ggplot(aes(METABOLITE_IMF, viallabel)) +
-    geom_tile(aes(fill = VALUE)) + 
-    #geom_text(aes(label = VALUE)) +
-    scale_fill_gradient(low = "white", high = "red") +
-  ggtitle(runs_out) +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  theme(axis.title.x = element_blank(),
-  axis.title.y = element_blank()) +
-  scale_x_discrete(position = "top") +
-  theme(axis.text.x = element_text(angle = 300, hjust = 0.9))
-
-
-
-paletteLength <- 1000
-myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(1/paletteLength, max(cor1), length.out=floor(paletteLength/2)))
-# Plot the heatmap
-p_out <- pheatmap(cormat1, color=myColor, breaks=myBreaks, cluster_rows = T, cluster_cols = T)
-# The plot needs to be saved for viewing (too large)
-heatmap_file <- paste0(WD, '/plots/20201021_sample-by-sample-correlation-heatmap-shared_steep.pdf')
-save_pheatmap_pdf(p_out, heatmap_file, width = 18, height = 18)
-
-
-```
-
-
-
-
-
-
-
-
-
-
-# Impute Missing Values (Necessary for PCA)
-# Combine AutoScaled Datasets for PCA (Matrix; Columns:Metabolites, Rows: Unique_ID) (labelid+INSTITUTE+TECH))
--PREFA and PREFB are pooled samples for QC purposes
-# PCA Analysis (Shared Samples and Shared Metabolites)
-```{r Impute Missing Values + PCA}
-
-for(TFORM in c('Untransformed','AutoScaled')){
-  if(TFORM == 'Untransformed'){
-    tissue_mat <- countdata_df %>%
-    ungroup() %>%
-    filter(METAB_FAMILY == metab_family) %>%
-    filter(NAMED == named) %>%
-    select(TISSUE, COUNT_DATA) %>%
-    unnest(COUNT_DATA) %>%
-    filter(METABOLITE_NAME %in% all_mets) %>%
-    mutate(viallabel = ifelse(grepl('QC_',viallabel), paste0(viallabel,'__',TISSUE), viallabel)) %>%
-    select(viallabel, METABOLITE_NAME,VALUE) %>%
-    pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
-    tibble::column_to_rownames(var = "viallabel") %>%
-    as.matrix()
-  }else if(TFORM == 'AutoScaled'){
-    tissue_mat <- countdata_df %>%
-    ungroup() %>%
-    filter(METAB_FAMILY == metab_family) %>%
-    filter(NAMED == named) %>%
-    select(TISSUE, COUNT_DATA) %>%
-    unnest(COUNT_DATA) %>%
-    filter(METABOLITE_NAME %in% all_mets) %>%
-    mutate(viallabel = ifelse(grepl('QC_',viallabel), paste0(viallabel,'__',TISSUE), viallabel)) %>%
-    select(viallabel, METABOLITE_NAME,VALUE) %>%
-    pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
-    tibble::column_to_rownames(var = "viallabel") %>%
-    as.matrix() %>% AutoScaleMatrix()
+# Iterate through plot type (across tissues)
+for(shared_tis_vec in shared_tissues_vec[1:9]){
+#for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_rppos"){
+  print(shared_tis_vec)
+  # Adjust name
+  shared_tis_out <- shared_tis_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';','_') %>% tolower()
+  if(save_tf){
+    # Create the output directory
+    out_dir <- paste0(WD,'/plots/site_comparisons/within_tissues/',shared_tis_out)
+    cmd <- paste0('mkdir -p ',out_dir)
+    system(cmd)
   }
   
-  # Determine the proportion of missing data
-  na_df <- data.frame()
-  for(i in 1:ncol(tissue_mat)){
-    # Collect numeric vector
-    num_vec <- tissue_mat[,i] %>% unname()
-    df <- NumericSummaryStats(num_vec)
-    row.names(df) <- colnames(tissue_mat)[i]
-    na_df <- rbind(na_df, df)
+  # Collect tissues based on frequency
+  runs <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(TISSUE == shared_tis_vec) %>% select(RUNS) %>% unlist() %>% as.character() %>% unique()
+  for(plot_type in plot_types){
+      print(plot_type)
+      # Iterate through tissues
+      i <- 1
+      plot_list <- list()
+      #run <- runs[2]
+      for(run in runs[1:9]){
+        shared_run_out <- run %>% 
+          str_replace_all('_','-') %>% str_replace_all(' ','-') %>% 
+          str_replace_all(';','_') %>% tolower()
+          print(run)
+          # Load the object into memory
+          data_dir <- paste0(WD,"/data/site_comparisons/",shared_tis_vec)
+          p_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",shared_run_out,"-",plot_type,"_steep.rds")
+          if(plot_type %in% c('mxm-original', 'mxm-normalized','sxs-original', 'sxs-normalized',
+                              'sxs-normalized-se','sxs-normalized-es')){
+            phm <- readRDS(p_file)
+            plot_list[[i]] <- phm$gtable
+          }else{
+            plot_list[[i]] <- readRDS(p_file)
+          }
+          i <- i + 1
+          }
+   # Save the plots in a grid
+    if(length(plot_list) == 1){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 1
+      w <- 10
+      h <- 10
+    }else if(length(plot_list) == 2){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 2
+      w <- 20
+      h <- 30
+    }else if(length(plot_list) == 3){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 3
+      w <- 30
+      h <- 10
+    }else if(length(plot_list) == 4){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 2
+      w <- 20
+      h <- 20
+    }else if(length(plot_list) == 5){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 5
+      w <- 50
+      h <- 10
+    }else if(length(plot_list) == 6){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 3
+      w <- 30
+      h <- 20
+    }else if(length(plot_list) == 7) {
+      print(length(plot_list))
+      nr <- 1
+      nc <- 7
+      w <- 49
+      h <- 7
+    }else if(length(plot_list) == 8){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 4
+      w <- 20
+      h <- 40
+    }else if(length(plot_list) %in% c(9)){
+      print(length(plot_list))
+      nr <- 3
+      nc <- 3
+      w <- 30
+      h <- 30
+    }
+      
+      
+  plots_out <- marrangeGrob(plot_list, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(plot_list), nr, nc, TRUE))
+  if(T){
+    plot_dir <- paste0(WD,'/plots/site_comparisons/within_tissues/',shared_tis_out)
+    cmd <- paste0('mkdir -p ',plot_dir)
+    system(cmd)
+    ggsave(paste0(WD,'/plots/site_comparisons/within_tissues/',shared_tis_out,'/20201104_pass1a-metabolomics-',plot_type,'_steep.bmp'), plots_out,  width=w, height=h, 
+device = "bmp", dpi = 72)
   }
-  na_df %>% select(NA_COUNT, NA_FREQ) %>%
-    filter(NA_FREQ > 0) %>%
-    arrange(desc(NA_FREQ)) %>% kbl() %>% kable_styling()
-
-  # Collect the major columns to be adjsuted
-  imputed_cols10 <- na_df %>% select(NA_COUNT, NA_FREQ) %>%
-    filter(NA_FREQ > 0) %>%
-    arrange(desc(NA_FREQ)) %>%
-    head(n = 10) %>% row.names()
-
-  # Use a knn method to impute missing values (need to come back and adjust)
-  preProcValues <- preProcess(tissue_mat,
-                              method = c("knnImpute"),
-                            k = floor(sqrt(ncol(tissue_mat))),
-                            knnSummary = mean)
-  # To get the normalizaed data
-  impute_tissue_mat <- predict(preProcValues, tissue_mat, na.action = na.pass)
-  # To denormalize ("deautoscale")
-  tissue_mat_knn <- ReverseAutoScaleMatrix(impute_tissue_mat)
-
-  # Examine the post impute data
-  #summary(tissue_mat)
-  #summary(tissue_mat_knn)
-
-  # Plot a PCA with outliers labeled
-  #dim(tissue_mat_knn)
-  #tissue_mat_sam <- tissue_mat_knn[sample(1:nrow(tissue_mat_knn), 200),]
-
-  pca <- prcomp(tissue_mat_knn, scale. = F)
-  percentVar <- pca$sdev^2/sum(pca$sdev^2)
-  PC <- pca$x %>% as.data.frame()
-  PC$viallabel_tissue <- as.character(row.names(pca$x))
-  PC <- PC %>%
-    tidyr::separate(col = viallabel_tissue, into = c('viallabel', 'QCtissue'),
-    sep = "__", remove = T)
-  # Join the phenotype data and additional metadata
-  PC <- left_join(PC, pheno_df, by = 'viallabel')
-  meta_labelid_df1 <- meta_labelid_df %>%
-    filter(sample_type == 'Sample') %>%
-    mutate(sample_type = as.character(sample_type))
-  meta_labelid_df2 <- meta_labelid_df %>%
-    filter(sample_type != 'Sample')
-  PC <- left_join(PC, meta_labelid_df1, by = 'viallabel') %>%
-    mutate(sample_type = ifelse(grepl('QC_PREFA',viallabel), 'QC-DriftCorrection', sample_type)) %>%
-    mutate(sample_type = ifelse(grepl('QC_PREFB',viallabel), 'QC-Pooled', sample_type)) %>%
-    mutate(sample_type = ifelse(grepl('QC_Sed',viallabel), 'QC-Reference', sample_type)) %>%
-    mutate(TISSUE = ifelse(grepl('QC_PREFA',viallabel), QCtissue, TISSUE)) %>%
-    mutate(TISSUE = ifelse(grepl('QC_PREFB',viallabel), QCtissue, TISSUE)) %>%
-    mutate(TISSUE = ifelse(grepl('QC_Sed',viallabel), QCtissue, TISSUE))
-  table(PC$sample_type) %>% kbl() %>% kable_styling()
-
-  PC %>%
-    filter(sample_type %in% c('Sample','QC-Pooled')) %>%
-    group_by(sample_type,TISSUE) %>%
-      mutate(SAMPLE_N = n()) %>%
-      select(sample_type,TISSUE,SAMPLE_N) %>%
-      unique() %>% pivot_wider(names_from = sample_type, values_from = SAMPLE_N)
-
-  # Clean up annotations
-  PC$sample_type <- as.character(PC$sample_type)
-  PC$TISSUE <- as.character(PC$TISSUE)
-  PC_DRIFT <- PC %>%
-    filter(sample_type %in% c('QC-DriftCorrection','Sample')) %>%
-    mutate(QC_DRIFT = ifelse(sample_type == 'QC-DriftCorrection', 'QC-DriftCorrection' ,sample_type))
-  PC_Pooled <- PC %>%
-    filter(sample_type %in% c('QC-Pooled','Sample')) %>%
-    mutate(QC_DRIFT = ifelse(sample_type == 'QC-Pooled', 'QC-Pooled' ,sample_type))
-  PC_REF <- PC %>%
-    filter(sample_type %in% c('QC-Reference','Sample')) %>%
-    mutate(QC_DRIFT = ifelse(sample_type == 'QC-Reference', 'QC-Reference' ,sample_type))
-
-  # Plot the pca (one outlier removed)
-  p<- PC_Pooled %>%
-    filter(viallabel != '90038016903') %>%
-    mutate(dot_size = ifelse(grepl('QC',sample_type), 1.5, 1)) %>%
-        ggplot(aes(x = PC1, y = PC2, color=TISSUE, shape = sample_type, size = dot_size)) +
-        geom_point(alpha = 0.5) +
-        ggtitle(paste0(metab_family,',',named,',',dataset,',','QC_Pooled',',',TFORM)) + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance'))
-        #theme(aspect.ratio=1)
-  print(p)
-  p<- PC_REF %>%
-    filter(viallabel != '90038016903') %>%
-    mutate(dot_size = ifelse(grepl('QC',sample_type), 1.5, 1)) %>%
-        ggplot(aes(x = PC1, y = PC2, color=TISSUE, shape = sample_type, size = dot_size)) +
-        geom_point(alpha = 0.5) +
-        ggtitle(paste0(metab_family,',',named,',',dataset,',','QC_REF',',',TFORM)) + 
-        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
-        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance'))
-        #theme(aspect.ratio=1)
-  print(p)
- 
+  }
 }
+
+```
+
+### Investigate Rank Scores of Plots Between (2) Sites: Stratified by Tissue
+``` {r Investigate Rank Scores of Plots Between Sites: Stratified by Tissue}
+# Collect Variables
+#########################
+# Types of data
+data_types <- c("sxs-normalized-rank-df","mxm-normalized-rank-df")
+
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+shared_runs_vec <- df_shared_casrun %>% 
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUN_N == 2) %>%
+    select(RUNS) %>% unlist() %>% as.character() %>% unique()
+
+# DEV
+############
+# data_type <- "sxs-normalized-rank-df"
+# tissue <- "brown-adipose"
+# shared_run_vec <- shared_runs_vec[1]
+# save_tf <- T
+# shared_run_vec
+
+# Iterate through plot type (across tissues)
+all_rank_df <- data.frame()
+for(shared_run_vec in shared_runs_vec[1:69]){
+  print(shared_run_vec)
+  # Adjust name
+  shared_run_out <- shared_run_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';','_') %>% tolower()
+
+  # Collect tissues based on frequency
+  tissues <- df_shared_casrun %>% filter(RUN_N == 2) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+  filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
+  for(data_type in data_types){
+      print(data_type)
+    # Add the data type
+      if(data_type == "sxs-normalized-rank-df"){
+        dt <- 'SXS'
+      }else if(data_type == "mxm-normalized-rank-df"){
+        dt <- 'MXM'
+      }
+      # Iterate through tissues
+      #tissue <- tissues[2]
+      for(tissue in tissues){
+          print(tissue)
+          # Load the object into memory
+          data_dir <- paste0(WD,"/data/site_comparisons/",shared_run_out)
+          r_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-",data_type,"_steep.rds")
+          rank_df <- readRDS(r_file)
+          rank_df$COR_MTX <- dt
+          rank_df$RUN <- shared_run_vec
+          names(rank_df)[1] <- 'N_or_P'
+          all_rank_df <- rbind(all_rank_df, rank_df)
+      } # Iteration over tissues
+  } # Iteration over data types
+} # Iteration over runs
+
+# Collect the means for each tissue/run
+######################
+med_ranks_df <- all_rank_df %>%
+  group_by(RUN, TISSUE, COR_MTX) %>%
+  mutate(MEAN = mean(RANK)) %>%
+  arrange(MEAN) %>%
+  select(RUN, TISSUE, MEAN, COR_MTX) %>% 
+  unique() %>% ungroup() %>%
+  split(.$COR_MTX) %>%
+  map(~rename(., !!sym(unique(.$COR_MTX)) := "MEAN")) %>%
+  map(~select(., -COR_MTX)) %>%
+  purrr::reduce(left_join, by = c("RUN","TISSUE"))
+
+# Join in additional metadata
+join_df <- df_shared_casrun %>%
+  select(RUNS, TISSUE, RUN_N, METABOLITES_N_RUN, SAMPLES_N_RUN,SHARED_MET_CLASS)
+names(join_df)[1] <- "RUN"
+
+# all_rank_df %>%
+#   filter(RUN == 'Broad Institute_hilicpos;University of Michigan_rppos') %>%
+#   filter(TISSUE == 'brown-adipose') %>%
+#   filter(COR_MTX == 'MXM')
+
+major_ranks_df <- left_join(med_ranks_df, join_df, by = c("RUN","TISSUE"))
+# Split and join
+major_ranks_df <- major_ranks_df %>%
+  separate(col = RUN, into = c("RUN1", "RUN2"), sep = ';', remove = F) %>%
+  separate(col = RUN1, into = c("STUDY_INSTITUTE", "METAB_FAMILY"), sep = "_") %>%
+  left_join(y = (filter(major_df, NAMED == 'named') %>% select(-NAMED)), by =c("STUDY_INSTITUTE", "TISSUE","METAB_FAMILY"))
+# Rename
+names(major_ranks_df) <- names(major_ranks_df) %>%
+  str_replace("STUDY_INSTITUTE", "STUDY_INSTITUTE1") %>%
+  str_replace("METAB_FAMILY", "METAB_FAMILY1") %>%
+  str_replace("DATASET", "DATASET1") %>%
+  str_replace("CH_CHROMATOGRAPHY_TYPE", "CH_CHROMATOGRAPHY_TYPE1") %>%
+  str_replace("MS_TYPE", "MS_TYPE1") %>%
+  str_replace("MS_ION_MODE", "MS_ION_MODE1")
+# Split and join
+major_ranks_df <- major_ranks_df %>%
+  separate(col = "RUN2", into = c("STUDY_INSTITUTE", "METAB_FAMILY"), sep = "_") %>%
+  left_join(y = (filter(major_df, NAMED == 'named') %>% select(-NAMED)), by =c("STUDY_INSTITUTE", "TISSUE","METAB_FAMILY"))
+# Rename
+names(major_ranks_df) <- names(major_ranks_df) %>%
+  str_replace("STUDY_INSTITUTE$", "STUDY_INSTITUTE2") %>%
+  str_replace("METAB_FAMILY$", "METAB_FAMILY2") %>%
+  str_replace("DATASET$", "DATASET2") %>%
+  str_replace("CH_CHROMATOGRAPHY_TYPE$", "CH_CHROMATOGRAPHY_TYPE2") %>%
+  str_replace("MS_TYPE$", "MS_TYPE2") %>%
+  str_replace("MS_ION_MODE$", "MS_ION_MODE2")
+```
+
+### EDA
+```{r EDA}
+
+
+
+for(tis in unique(major_ranks_df$TISSUE)){
+  print(tis)
+  x <- major_ranks_df %>%
+    arrange(desc(METABOLITES_N_RUN)) %>%
+    filter(TISSUE == tis) %>%
+    head(n = 11) %>%
+    select(RUN,TISSUE,MXM,SXS)
+  print(x)
+}
+
+  
 
 
 ```
 
+```{r}
+major_cor <- major_ranks_df %>%
+  filter(METABOLITES_N_RUN >= 9) %>%
+  filter(SAMPLES_N_RUN >= 9) %>%
+  select(MXM, TISSUE, RUN) %>%
+  #unite(TISSUE, RUN, col = TISSUE_RUN) %>%
+  pivot_wider(names_from = TISSUE, values_from = MXM) %>%
+  column_to_rownames(var = "RUN") %>%
+  as.matrix()
+
+x_df <- major_ranks_df %>%
+  filter(RUN == 'Broad Institute_hilicpos;University of Michigan_rppos') %>%
+  select(TISSUE, MXM, SXS)
+  filter(SHARED_MET_CLASS %in% c('1','3')) %>%
+  #filter(METABOLITES_N_RUN >= 20) %>%
+  filter(SAMPLES_N_RUN >= 9)
+summary(lm(data = x_df, MXM ~ SXS))
+
+major_ranks_df %>%
+  #filter(METABOLITES_N_RUN >= 20) %>%
+  filter(SHARED_MET_CLASS %in% c('1','3')) %>%
+  filter(SAMPLES_N_RUN >= 9) %>%
+  ggplot(aes(x = MXM, y = SXS, color = SHARED_MET_CLASS)) +
+  geom_point()
+
+major_ranks_df %>%
+  #filter(METABOLITES_N_RUN >= 20) %>%
+  #filter(SHARED_MET_CLASS %in% c('1','3')) %>%
+  filter(SAMPLES_N_RUN >= 9) %>%
+  ggplot(aes(x = MXM, y = SXS,color = SHARED_MET_CLASS)) +
+  geom_point()
+
+major_ranks_df %>%
+  filter(RUN == "Broad Institute_hilicpos;University of Michigan_rppos") %>%
+  select(TISSUE, MXM, SXS)
+
+
+# Annotation colors
+ann_colors <- list(
+  TISSUE = c('plasma' = 'yellow2', 
+             'liver' = 'springgreen4',
+             'brown-adipose' = 'hotpink',
+             'hippocampus' = 'cornsilk1',
+             'gastrocnemius' = 'purple4',
+             'lung' = 'plum',
+             'heart' = 'orangered',
+             'kidney' = 'chartreuse2',
+             'white-adipose' = 'royalblue'),
+  STUDY_INSTITUTE1 = c("Broad Institute"  = 'turquoise', 
+                       "Georgia Institute of Technology" = 'deeppink1',
+                        "University of Michigan" = "khaki",
+                       "Mayo Clinic Rep 1" = "orchid",
+                       "Mayo Clinic Rep 2" = "orchid3",
+                       "Mayo Clinic Rep 3" = "orchid4",
+                        "Duke University"  = "dodgerblue"),
+  STUDY_INSTITUTE2 = c("Broad Institute"  = 'turquoise', 
+                       "Georgia Institute of Technology" = 'deeppink1',
+                        "University of Michigan" = "khaki",
+                       "Mayo Clinic Rep 1" = "orchid",
+                       "Mayo Clinic Rep 2" = "orchid3",
+                       "Mayo Clinic Rep 3" = "orchid4",
+                        "Duke University"  = "dodgerblue")
+)
+
+
+# Sort the values by tissue
+tis_order <- major_ranks_df %>%
+  group_by(TISSUE) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(TISSUE) %>% unlist() %>% unique() %>% as.character()
+
+
+# Sort the values by site
+site_order <- major_ranks_df %>%
+  filter(METABOLITES_N_RUN >= 9) %>%
+  filter(SAMPLES_N_RUN >= 9) %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  #filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(STUDY_INSTITUTE1) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(RUN) %>% unlist() %>% unique() %>% as.character()
+site_order <- site_order[7:length(site_order)]
 
 
 
+# Sort the annotations
+col_df <- c("plasma","hippocampus","gastrocnemius","kidney","lung",
+            "brown-adipose","liver","heart","white-adipose")
+
+site_order1 <- c("Broad Institute","University of Michigan",
+                 "Mayo Clinic Rep 1","Mayo Clinic Rep 2",
+                 "Georgia Institute of Technology","Duke University")
+site_order2 <- c("Broad Institute","University of Michigan",
+                 "Mayo Clinic Rep 1","Mayo Clinic Rep 2",
+                 "Mayo Clinic Rep 3","Georgia Institute of Technology")
+
+row_ann <- major_ranks_df %>%
+  filter(METABOLITES_N_RUN >= 9) %>%
+  filter(SAMPLES_N_RUN >= 9) %>%
+  #select(MXM, TISSUE, RUN) %>%
+  #unite(TISSUE, RUN, col = TISSUE_RUN) %>%
+  select(RUN, STUDY_INSTITUTE2, STUDY_INSTITUTE1,-METAB_FAMILY1,-METAB_FAMILY2) %>%
+  unique() %>%
+  mutate(STUDY_INSTITUTE1 = factor(STUDY_INSTITUTE1, levels = site_order1)) %>%
+  mutate(STUDY_INSTITUTE2 = factor(STUDY_INSTITUTE2, levels = site_order2)) %>%
+  column_to_rownames(var = "RUN")
+row_ann <- row_ann %>%
+  arrange(STUDY_INSTITUTE1, STUDY_INSTITUTE2)
+
+# site_order1 %in% row_ann$STUDY_INSTITUTE1
+# site_order2 %in% row_ann$STUDY_INSTITUTE2
+#unique(row_ann$STUDY_INSTITUTE1) %in% site_order1
+
+
+# Sort matrix
+major_cor <- major_cor[rownames(row_ann),col_df]
+
+# Plot the heatmap
+p <- pheatmap(major_cor, 
+               color = colorRampPalette(brewer.pal(n = 7, name ="RdYlBu"))(100), 
+               #breaks=myBreaks,
+              #main = '',
+              cluster_rows = F, cluster_cols = F,fontsize = 8,
+              show_rownames = F, 
+              show_colnames = F,
+              annotation_colors = ann_colors,
+              annotation_row = row_ann,
+              annotation_col = col_mat,
+              annotation_names_col = F, annotation_names_row = F,
+              annotation_legend = T, legend = T)
+
+pdf_file <- "/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/plots/20201103_pass1a-metabolomics-metric-heatmap-site-tissue_steep.pdf"
+save_pheatmap_pdf(p, filename = pdf_file)
+
+
+# Manual
+row_ann %>% 
+  filter(STUDY_INSTITUTE1 == 'Georgia Institute of Technology')
+
+major_ranks_df %>%
+  filter(RUN == "Georgia Institute of Technology_lrppos;Mayo Clinic Rep 2_ac")
+  filter(RUN == "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines")
+
+
+
+```
+
+```{r}
+# Highest
+major_ranks_df %>%
+  arrange(MXM) %>%
+  filter(RUN == "Broad Institute_hilicpos;University of Michigan_rppos") %>%
+  select(-STUDY_INSTITUTE1, -STUDY_INSTITUTE2, -METAB_FAMILY1,-METAB_FAMILY2)
+
+# RUN
+major_ranks_df %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(RUN) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(RUN,SHARED_MET_CLASS, MEAN_MXM, METABOLITES_N_RUN,TISSUE,MXM, SAMPLES_N_RUN)
+
+major_ranks_df %>%
+  filter(grepl("University of Michigan_ionpneg",RUN)) %>%
+  group_by(RUN) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM)
+  filter(RUN == "Duke University_nuc;University of Michigan_ionpneg")
+
+# 3 way comparisons
+  # Broad Institute_hilicpos;University of Michigan_ionpneg
+  # vs
+  # Duke University_nuc;University of Michigan_ionpneg
+  
+# Tissue
+# High: plasma, hippocampus, gastrocnemius
+# Low: white-adipose, kidney, liver
+major_ranks_df %>%
+  group_by(TISSUE) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(TISSUE, MEAN_MXM,MXM)
+
+# SHARED_MET_CLASS
+# High: 1
+# Low: 3
+major_ranks_df %>%
+  group_by(SHARED_MET_CLASS) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+# Cannot conclude
+#DATASET1
+major_ranks_df %>%
+  filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2')) %>%
+  group_by(DATASET1) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(DATASET1,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+#DATASET2
+major_ranks_df %>%
+  filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2')) %>%
+  group_by(DATASET2) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(DATASET1,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+# STUDY_INSTITUTE1
+# Broad, UM, Mayo, GT, Duke
+major_ranks_df %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(STUDY_INSTITUTE1) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(STUDY_INSTITUTE1,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+# STUDY_INSTITUTE2
+major_ranks_df %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(STUDY_INSTITUTE2) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(STUDY_INSTITUTE1,STUDY_INSTITUTE2,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+# METAB_FAMILY1
+# High: rpneg (UMich); Hilicpos (Broad); Amines (Mayo)
+# Low: Duke (ac); GT (lrppos); GT(lrpneg)
+major_ranks_df %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(METAB_FAMILY1) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(STUDY_INSTITUTE1,METAB_FAMILY1,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+# STUDY_INSTITUTE1xMETAB_FAMILY1
+# High: Amines (Mayo); rpneg (UMich); Hilicpos (Broad)
+# Low: Duke (ac); GT (lrppos); GT(lrpneg)
+major_ranks_df %>%
+  #filter(TISSUE %in% c("plasma", "hippocampus", "gastrocnemius")) %>%
+  filter(SHARED_MET_CLASS %in% c('1','2','3')) %>%
+  group_by(STUDY_INSTITUTE1,METAB_FAMILY1) %>%
+  mutate(MEAN_MXM = mean(MXM)) %>%
+  arrange(MEAN_MXM) %>%
+  select(STUDY_INSTITUTE1,METAB_FAMILY1,SHARED_MET_CLASS, TISSUE, MEAN_MXM,MXM)
+
+
+
+
+
+# Create an scatterplot to examine correlation
+######################
+med_ranks_df %>%
+  ggplot(aes(x = MXM, y = SXS)) +
+  geom_text_repel(aes(label = TISSUE, color = RUN)) +
+  geom_jitter(height = 0, width = 0, alpha = 0.8, size = 2)
+
+
+# med_ranks_df %>%
+#   filter(RUN %in% c("Broad Institute_hilicpos;Mayo Clinic Rep 2_amines",
+#                     "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines",
+#                     "Mayo Clinic Rep 1_amines;Mayo Clinic Rep 2_amines")) %>%
+#   arrange(TISSUE)
+
+# Histograms should be similar
+##############################
+med_ranks_df %>%
+  ggplot(aes(x = MXM)) +
+  geom_histogram()
+med_ranks_df %>%
+  ggplot(aes(x = SXS)) +
+  geom_histogram()
+
+
+med_ranks_df %>%
+  group_by(TISSUE) %>%
+  mutate(MEAN = mean(MXM)) %>%
+  arrange(MEAN)
+
+med_ranks_df %>%
+  group_by(RUN) %>%
+  mutate(MEAN = mean(MXM)) %>%
+  arrange(MEAN)
+
+
+# Visualize the ranks
+#all_rank_df
+med_ranks_df
+
+```
+
+### Comparison of Samples and Metabolites Shared Between (3) Sites (Before and After Normalization)
+#### These analyses are rendered in adjunct HTML files in 20200915_metabolomics-pass1a/reports/site_comparisons
+<!-- # ```{r Automation: Comparison of Samples and Metabolites Shared Between Sites, echo=TRUE, fig.show='hide', message=TRUE, warning=TRUE, results='hide'} -->
+```{r Automation: Comparison of Samples and Metabolites Shared Between (3) Sites, echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+
+#DEV
+###########
+# shared_runs_vec <- df_shared_casrun %>% filter(RUN_N == 3) %>% select(RUNS) %>% unlist() %>% as.character() %>% unique()
+#shared_run_vec <- shared_runs_vec[19]
+#row <- 247
+# Broad Institute_hilicpos;University of Michigan_ionpneg
+  # vs
+  # Duke University_nuc;University of Michigan_ionpneg
+# shared_run_vec <- "Broad Institute_hilicpos;University of Michigan_rppos;Mayo Clinic Rep 1_ac"
+#row <- 87
+
+if(T){
+  # Comparisons ranked by number of metabolites shared in at least 1 tissue
+  shared_runs_vec <- df_shared_casrun %>% filter(RUN_N == 3) %>% 
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    select(RUNS) %>% 
+    unlist() %>% as.character() %>% unique()
+  # shared_runs_vec <- shared_runs_vec[!grepl('Mayo Clinic Rep 3', shared_runs_vec)]
+  for(shared_run_vec in shared_runs_vec[1:20]){
+    print(shared_run_vec)
+  # for(shared_run_vec in "Broad Institute_hilicpos;University of Michigan_ionpneg;University of Michigan_rppos"){ 
+  #for(shared_run_vec in group_3s){
+    df_shared_casrun2 <- df_shared_casrun %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUN_N == 3)
+    rows <- df_shared_casrun2 %>%
+      rownames_to_column('row') %>%
+      filter(RUNS == shared_run_vec) %>%
+      select(row) %>% unlist() %>% as.numeric()
+    for(row in rows){
+      #for(row in 1:nrow(df_shared_casrun)){
+      RUN_N <- df_shared_casrun2[row, "RUN_N"] %>% unlist() %>% as.numeric()
+      if(RUN_N == 3){
+        print(row)
+        # Variables
+        ##############################################################################
+        #df_shared_casrun[row,]
+        tissue <- df_shared_casrun2[row, "TISSUE"] %>% unlist() %>% as.character()
+        print(tissue)
+        shared_runs <- df_shared_casrun2[row, "RUNS"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        shared_mets <- df_shared_casrun2[row, "METABOLITES_RUN"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        shared_sams <- df_shared_casrun2[row, "SAMPLES_RUN"] %>% unlist() %>% as.character() %>% 
+          str_split(pattern = ';') %>% unlist()
+        # shared_pids <- df_shared_casrun2[row, "PIDS_RUN"] %>% unlist() %>% as.character() %>% 
+        #   str_split(pattern = ';') %>% unlist()
+        named <- "named"
+        shared_runs_out <- shared_runs %>% 
+          str_replace_all('_','-') %>% str_replace_all(' ','-') %>% tolower() %>%
+          paste(collapse = '_')
+        nxp_out <- paste0('m',as.character(length(shared_mets)),'-s',as.character(length(shared_sams)))
+        comp_id <- df_shared_casrun2[row, "COMP_ID"] %>% unlist() %>% as.character()
+        # Collect the master sample set
+        # master_pid <- df_shared_casrun2 %>%
+        #   filter(RUNS == shared_run_vec) %>%
+        #   select(PIDS_RUN) %>%
+        #   map(str_split, pattern = ';', simplify = F) %>%
+        #   map(unlist) %>% unlist() %>% as.character() %>%
+        #   table() %>% sort()
+        # master_pid <- names(master_pid[master_pid > floor(length(rows)/2)])
+        # # # Collect the master metab set
+        # master_met <- df_shared_casrun2 %>%
+        #   filter(RUNS == shared_run_vec) %>%
+        #   select(METABOLITES_RUN) %>%
+        #   map(str_split, pattern = ';', simplify = F) %>%
+        #   map(unlist) %>% unlist() %>% as.character() %>%
+        #   table() %>% sort()
+        # master_met <- names(master_met[master_met > floor(length(rows)/2)])
+
+      # Subset Data
+      ################################################################################
+      # Collect abundances in long format
+      plot_df <- countdata_df %>%
+        ungroup() %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% shared_mets) %>%
+        filter(labelid %in% shared_sams) %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
+      
+      # Collect abundances in long format for correlation matrices
+      cor_df <- countdata_df %>%
+        ungroup() %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% master_met) %>%
+        filter(pid %in% master_pid) %>%
+        #filter(METABOLITE_NAME %in% shared_mets) %>%
+        #filter(labelid %in% shared_sams) %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs)
+      # Collect abundances in long "joined" format
+      plot_join_df <- countdata_df %>%
+        ungroup() %>%
+        unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+        filter(TISSUE == tissue) %>%
+        filter(NAMED == named) %>%
+        filter(STUDY_INSTITUTE_METAB_FAMILY %in% shared_runs) %>%
+        unnest(COUNT_DATA) %>%
+        filter(METABOLITE_NAME %in% shared_mets) %>%
+        filter(labelid %in% shared_sams) %>%
+        select(STUDY_INSTITUTE_METAB_FAMILY,METABOLITE_NAME,labelid,VALUE) %>%
+        mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+        map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+      
+      # The normalized counts
+      norm_df <- plot_df %>%
+        unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, 
+              col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", remove = F,sep =';') %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(select, labelid_STUDY_INSTITUTE_METAB_FAMILY, METABOLITE_NAME, VALUE) %>%
+        map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+        map(column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(as.matrix) %>%
+        map(AutoScaleMatrix) %>%
+        map(as.data.frame) %>%
+        map(rownames_to_column, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets)) %>%
+        map(separate, col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", 
+            into = c("labelid", "STUDY_INSTITUTE_METAB_FAMILY"), sep =';') %>%
+        bind_rows()
+      # Collect normalized abundances in long "joined" format
+      norm_join_df <- plot_df %>%
+        unite(labelid, STUDY_INSTITUTE_METAB_FAMILY, 
+              col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", remove = F,sep =';') %>%
+        select(STUDY_INSTITUTE_METAB_FAMILY, labelid_STUDY_INSTITUTE_METAB_FAMILY, 
+               METABOLITE_NAME, VALUE) %>%
+        mutate(STUDY_INSTITUTE_METAB_FAMILY = as.character(STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        split(.$STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(select, -STUDY_INSTITUTE_METAB_FAMILY) %>%
+        map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+        map(column_to_rownames, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(as.matrix) %>%
+        map(AutoScaleMatrix) %>%
+        map(as.data.frame) %>%
+        map(rownames_to_column, var = "labelid_STUDY_INSTITUTE_METAB_FAMILY") %>%
+        map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(shared_mets)) %>%
+        map(separate, col = "labelid_STUDY_INSTITUTE_METAB_FAMILY", 
+            into = c("labelid", "STUDY_INSTITUTE_METAB_FAMILY"), sep =';') %>%
+        map(~dplyr::rename(., !!sym(unique(.$STUDY_INSTITUTE_METAB_FAMILY)) := "VALUE")) %>%
+        map(~select(., -STUDY_INSTITUTE_METAB_FAMILY)) %>%
+        purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+        
+      # Render the Primary Analysis
+        ##########################################################################
+        html_dir = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/site_comparisons'
+        html_file = paste0("20201105_named-site-comparison-",comp_id,'_',tissue,'_',nxp_out,'_',
+                         shared_runs_out,'_steep.html')
+        rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201105_pass1a-metabolomics-site-specific-eda-analysis_steep.Rmd',
+        output_format = "html_document",
+        output_file = html_file,
+        output_dir = html_dir, 
+        quiet = TRUE,
+        clean = TRUE) 
+        #print(paste0('Output File: ', html_file))
+    }
+      }
+  }
+}
+#}
+print(paste0('Output Files PATH: ', html_dir))
+```
+
+### Investigate Rank Scores of Plots Between (3) Sites: Stratified by Tissue
+```{r, Investigate Rank Scores of Plots Between (3) Sites: Stratified by Tissue}
+# Collect Variables
+#########################
+# Types of data
+data_types <- c("sxs-normalized","mxm-normalized")
+
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+shared_runs_vec <- df_shared_casrun %>% filter(RUN_N == 3) %>% 
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    select(RUNS) %>% 
+    unlist() %>% as.character() %>% unique()
+
+# DEV
+############
+# data_type <- "mxm-normalized"
+# tissue <- "brown-adipose"
+# shared_run_vec <- "Broad Institute_hilicpos;University of Michigan_rppos;Mayo Clinic Rep 1_ac"
+# save_tf <- T
+
+total_rank_df <- data.frame()
+# Iterate through plot type (across tissues)
+#for(shared_run_vec in shared_runs_vec[1:20]){
+  for(shared_run_vec in "broad-institute-hilicpos_university-of-michigan-rppos_mayo-clinic-rep-1-ac"){ 
+#for(shared_run_vec in group_3s[1]){
+  print(shared_run_vec)
+  shared_runs <- shared_run_vec %>% str_split(pattern = ';') %>% unlist()
+  # Adjust name
+  shared_run_out <- shared_run_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';','_') %>% tolower()
+  shared_run_title <- shared_run_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';'," \n") %>% tolower()
+  # Collect tissues based on frequency
+  tissues <- df_shared_casrun %>% filter(RUN_N == 3) %>%
+  filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
+  all_mxm_df <- data.frame()
+  all_sxs_df <- data.frame()
+  for(data_type in data_types){
+      print(data_type)
+    # Add the data type
+      if(grepl('sxs',data_type)){
+        dt <- 'SXS'
+      }else if(grepl('mxm',data_type)){
+        dt <- 'MXM'
+      }
+      # Iterate through tissues
+      #tissue <- tissues[1]
+      for(tissue in tissues){
+          print(tissue)
+          #i <- 1
+          for(i in 1:3){
+            # Generate the correct comparisons
+            if(i == 1){
+              shared_runs1 <- shared_runs[1]
+              shared_runs2 <- shared_runs[2]
+            }else if(i == 2){
+              shared_runs1 <- shared_runs[1]
+              shared_runs2 <- shared_runs[3]
+            }else if(i == 3){
+              shared_runs1 <- shared_runs[2]
+              shared_runs2 <- shared_runs[3]
+            }
+            
+            comparison <- paste0(shared_runs1,';',shared_runs2)
+            data_dir <- paste0(WD,"/data/site_comparisons/",shared_run_out)
+            r_file <- paste0(data_dir,"/20201105_pass1a-metabolomics-",tissue,"-mxm-triple-",
+                   as.character(i),"-rank-df_steep.rds")
+            rank_df <- readRDS(r_file)
+            rank_df$COR_MTX <- dt
+            rank_df$TISSUE <- tissue
+            rank_df$RUN <- shared_run_vec
+            rank_df$COMPARISON <- comparison
+            names(rank_df)[1] <- 'N_or_P'
+            if(grepl('mxm',data_type)){
+              all_mxm_df <- rbind(all_mxm_df, rank_df)
+            }else if(grepl('sxs',data_type)){
+              all_sxs_df <- rbind(all_sxs_df, rank_df)
+            }
+          } # Iterations over comparisons (3)
+      } # Iteration over tissues
+  } # Iteration over data types
+  # Collect the means for each tissue
+  all_mxm_df %>%
+    group_by(RUN,TISSUE,COMPARISON,COR_MTX) %>%
+    mutate(MEAN = mean(RANK)) %>%
+    arrange(MEAN) %>%
+    select(RUN, TISSUE,COMPARISON, MEAN, COR_MTX) %>% 
+    unique() %>% ungroup() %>%
+    split(.$COR_MTX) %>%
+  map(~rename(., !!sym(unique(.$COR_MTX)) := "MEAN")) %>%
+  map(~select(., -COR_MTX)) %>%
+    purrr::reduce(left_join, by = c("RUN","TISSUE","COMPARISON")) %>%
+    arrange(TISSUE)
+    
+    
+    all_rank_df %>%
+  group_by(RUN, TISSUE, COR_MTX) %>%
+  mutate(MEAN = mean(RANK)) %>%
+  arrange(MEAN) %>%
+  select(RUN, TISSUE, MEAN, COR_MTX) %>% 
+  unique() %>% ungroup() %>%
+  split(.$COR_MTX) %>%
+  map(~rename(., !!sym(unique(.$COR_MTX)) := "MEAN")) %>%
+  map(~select(., -COR_MTX)) %>%
+  purrr::reduce(left_join, by = c("RUN","TISSUE"))
+  
+  mean_mxm_df <- all_mxm_df %>%
+    group_by(COMPARISON,TISSUE,RUN,COR_MTX) %>%
+    mutate(MEAN = mean(RANK)) %>%
+    arrange(MEAN) %>%
+    select(COMPARISON,TISSUE,RUN, MEAN, COR_MTX) %>% 
+    ungroup() %>% unique() %>% arrange(TISSUE)
+  mean_sxs_df <- all_sxs_df %>%
+    group_by(COMPARISON,TISSUE,RUN) %>%
+    mutate(MEAN = mean(RANK)) %>%
+    arrange(MEAN) %>%
+    select(COMPARISON,TISSUE,RUN, MEAN, COR_MTX) %>% 
+    unique() %>% ungroup()
+  # Take average of rank score
+  names(mean_mxm_df)[4] <- 'MEAN_MXM'
+  names(mean_sxs_df)[4] <- 'MEAN_SXS'
+  all_rank_df <- left_join(mean_mxm_df, mean_sxs_df, by = c("TISSUE","RUN","COMPARISON")) %>%
+      select(TISSUE,RUN,COMPARISON, MEAN_SXS, MEAN_MXM) %>%
+              rowwise %>%
+              mutate(MEAN_RANK = mean(c(MEAN_SXS,MEAN_MXM), na.rm = T))
+  total_rank_df <- rbind(total_rank_df, all_rank_df)
+} # Iteration over runs
+total_rank_df <- total_rank_df %>% ungroup()
+
+# total_rank_df$COMPARISON %>% 
+#  unique() %>% sort()
+comp_df <- data.frame(COMPARISON = c("Broad Institute_hilicpos;Georgia Institute of Technology_lrppos"    ,"Broad Institute_hilicpos;Mayo Clinic Rep 1_amines",
+                                     "Broad Institute_hilicpos;Mayo Clinic Rep 2_amines",
+                                     "Broad Institute_hilicpos;Mayo Clinic Rep 3_amines",
+                                     "Broad Institute_hilicpos;University of Michigan_ionpneg",
+                                     "Broad Institute_hilicpos;University of Michigan_rppos",
+                                     "Duke University_aa;Broad Institute_hilicpos",
+                                     "Duke University_aa;Mayo Clinic Rep 1_amines",
+                                     "Duke University_aa;Mayo Clinic Rep 2_amines",
+                                     "Duke University_ac;Broad Institute_hilicpos",
+                                     "Duke University_ac;Georgia Institute of Technology_lrppos",
+                                     "Duke University_ac;University of Michigan_rppos",
+                                     "Georgia Institute of Technology_lrppos;University of Michigan_rppos",
+                                     "Mayo Clinic Rep 1_amines;Mayo Clinic Rep 2_amines",
+                                     "Mayo Clinic Rep 2_amines;Mayo Clinic Rep 3_amines",
+                                     "University of Michigan_ionpneg;Mayo Clinic Rep 1_amines",
+                                     "University of Michigan_ionpneg;Mayo Clinic Rep 2_amines",
+                                     "University of Michigan_ionpneg;Mayo Clinic Rep 3_amines",
+                                     "University of Michigan_ionpneg;University of Michigan_rppos"),
+           COMP = c("BH_GTlrpP",
+         "BH_M1am",
+         "BH_M2am",
+         "BH_M3am",
+         "BH_UMionpN",
+         "BH_UMrpP",
+         "Dukeaa_BH",
+         "Dukeaa_M1am",
+         "Dukeaa_M2am",
+         "Dukeac_BH",
+         "Dukeac_GTlrpP",
+         "Dukeac_UMrpP",
+         "GTlrpP_UMrpP",
+         "M1am_M2am",
+         "M2am_M3am",
+         "UMionpN_M1am",
+         "UMionpN_M2am",
+         "UMionpN_M3am",
+         "UMionpN_UMrpP"))
+
+# Add the comparison abbreviations
+total_rank_df <- left_join(total_rank_df, comp_df, by = "COMPARISON")
+
+#run <- "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines;Mayo Clinic Rep 2_amines"
+total_rank_df %>%
+  filter(RUN == 'Broad Institute_hilicpos;University of Michigan_rppos;Mayo Clinic Rep 1_ac') %>%
+  select(TISSUE, COMPARISON, MEAN_SXS, MEAN_MXM)
+
+
+# Collect the runs of interest
+roi <- unique(total_rank_df$RUN)[grepl('Mayo', unique(total_rank_df$RUN))]
+roi <- total_rank_df %>%
+  group_by(RUN) %>%
+  mutate(MEANIE = mean(MEAN_RANK, na.rm = T)) %>%
+  arrange(MEANIE) %>%
+  select(RUN) %>%
+  unique() %>% unlist() %>% as.character()
+
+
+i <- 1
+plot_list <- list()
+# for(run in roi[1:9]){
+for(run in "Broad Institute_hilicpos;University of Michigan_ionpneg;University of Michigan_rppos"){ 
+#for(run in 'Broad Institute_hilicpos;University of Michigan_ionpneg;Mayo Clinic Rep 1_amines'){
+  # Title of plot
+  shared_run_title <- run %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';'," \n") %>% tolower()
+  shared_run_subtitle <- shared_run_title %>%
+    str_replace_all('broad-institute-hilicpos', 'BH') %>%
+    str_replace_all('georgiainstituteoftechnology', 'GT') %>%
+    str_replace_all('duke-university', 'Duke') %>%
+    str_replace_all('mayo-clinic', 'MC') %>%
+    str_replace_all('amines', 'a') %>%
+    str_replace_all(" \n", '; ') %>%
+    str_remove_all('-rep-') %>%
+    str_remove_all('-') %>%
+    str_replace_all('universityofmichigan','UM')
+  # tern_df <- total_rank_df %>%
+  #   filter(RUN == run) %>%
+  #   select(TISSUE,COMP,MEAN_RANK) %>%
+  #   # mutate(COMPARISON = COMPARISON %>% 
+  #   #          str_replace_all(pattern=' ',replacement = '_') %>%
+  #   #          str_replace_all(pattern=';',replacement = '__')) %>%
+  #   pivot_wider(names_from =COMP, values_from = MEAN_RANK)
+  # Collect inverse
+  # tern_df[,2:4] <- lapply(tern_df[,2:4], function(x) 1/x)
+  # Visualize the Ternary Plot
+  plot_list[[i]] <- ggtern(data = tern_df, aes()) +
+    geom_point(data = tern_df, 
+    aes_string(x = names(tern_df)[2],
+                y = names(tern_df)[3],
+                z = names(tern_df)[4],
+                color = "TISSUE"), 
+             size = 6) +
+    labs(title = shared_run_title, 
+           subtitle = shared_run_subtitle) +
+           xlab(paste0(names(tern_df)[2])) + 
+           ylab(paste0(names(tern_df)[3])) + 
+           zlab(paste0(names(tern_df)[4])) +
+  theme_ggtern(base_size = 26) +
+    theme(tern.axis.title.L = element_text(hjust = -0.3, vjust = 2),
+            tern.axis.title.R = element_text(hjust = 1.3, vjust = 2))
+     #theme(legend.position = "none")
+  i <- i + 1
+}
+# Save the plots in a grid
+if(length(plot_list) == 1){
+  print(length(plot_list))
+  nr <- 1
+  nc <- 1
+  w <- 10
+  h <- 10
+}else if(length(plot_list) == 2){
+  print(length(plot_list))
+  nr <- 1
+  nc <- 2
+  w <- 20
+  h <- 30
+}else if(length(plot_list) == 3){
+  print(length(plot_list))
+  nr <- 1
+  nc <- 3
+  w <- 30
+  h <- 10
+}else if(length(plot_list) == 4){
+  print(length(plot_list))
+  nr <- 2
+  nc <- 2
+  w <- 20
+  h <- 20
+}else if(length(plot_list) == 5){
+  print(length(plot_list))
+  nr <- 1
+  nc <- 5
+  w <- 50
+  h <- 10
+}else if(length(plot_list) == 6){
+  print(length(plot_list))
+  nr <- 2
+  nc <- 3
+  w <- 30
+  h <- 20
+}else if(length(plot_list) == 7) {
+  print(length(plot_list))
+  nr <- 1
+  nc <- 7
+  w <- 49
+  h <- 7
+}else if(length(plot_list) == 8){
+  print(length(plot_list))
+  nr <- 2
+  nc <- 4
+  w <- 20
+  h <- 40
+}else if(length(plot_list) %in% c(9)){
+  print(length(plot_list))
+  nr <- 3
+  nc <- 3
+  w <- 30
+  h <- 30
+}
+
+
+plots_out <- ggtern::arrangeGrob(grobs = plot_list, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(plot_list), nr, nc, TRUE))
+plot_dir <- paste0(WD,'/plots/site_comparisons/ternary')
+cmd <- paste0('mkdir -p ',plot_dir)
+system(cmd)
+ggsave(paste0(plot_dir, '/20201104_pass1a-metabolomics-ternary-1_steep.bmp'), 
+           plots_out,  width=w, height=h, device = "bmp", dpi = 72)
+
+
+
+```
+
+## Session Info
+```{r Sesh}
+session_info()
+```
+
+### Visualize High Dimension Plots Between (3) Sites: Stratified by Tissue
+###### Plots are saved in intermediate directories under identical names. Locate, rename, and combine them in intuitive manner.
+``` {r Visualize the Major Dimensions of the Metabolomics Pass1a (6mo) Hypercube}
+
+# Strategy:
+################
+# Start with: Broad Institute_hilicpos;University of Michigan_rppos
+# plot_type <- "sxs-normalized-se"
+
+# Collect Variables
+#########################
+# Types of plots
+# plot_types <- c("boxplot-original","density-original","mxm-original",
+#                 "sxs-original","pca-original-0","pca-original-1","pca-original-2",
+#                 "boxplot-normalized","density-normalized","mxm-normalized",
+#                 "sxs-normalized","sxs-normalized-es","sxs-normalized-se",
+#                 "pca-normalized-0","pca-normalized-1","pca-normalized-2")
+plot_types <-c("sxs-normalized-es","sxs-normalized-se","mxm-normalized")
+# Types of data
+data_types <- c("sxs-normalized-rank-df","mxm-normalized-rank-df")
+
+# Comparisons ranked by number of metabolites shared in at least 1 tissue
+shared_runs_vec <- df_shared_casrun2 %>% filter(RUN_N == 3) %>% 
+  filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+  select(RUNS) %>% unlist() %>% as.character() %>% unique()
+
+# DEV
+############
+# plot_type <- "mxm-normalized-rank-df"
+# tissue <- "brown-adipose"
+# shared_run_vec <- "Broad Institute_hilicpos;Mayo Clinic Rep 1_amines"
+#shared_run_vec <- "Broad Institute_hilicpos;Georgia Institute of Technology_lrppos;University of Michigan_rppos"
+
+  # Broad Institute_hilicpos;University of Michigan_ionpneg
+  # vs
+  # Duke University_nuc;University of Michigan_ionpneg
+
+# Iterate through plot type (across tissues)
+#for(shared_run_vec in shared_runs_vec[1:18]){
+for(shared_run_vec in "Broad Institute_hilicpos;Georgia Institute of Technology_lrppos;University of Michigan_rppos"){
+  print(shared_run_vec)
+  # Adjust name
+  shared_runs <- shared_run_vec %>% str_split(pattern = ';') %>% unlist()
+  shared_run_out <- shared_run_vec %>% 
+    str_replace_all('_','-') %>% str_replace_all(' ','-') %>% str_replace_all(';','_') %>% tolower()
+  if(T){
+    # Create the output directory
+    out_dir <- paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out)
+    cmd <- paste0('mkdir -p ',out_dir)
+    system(cmd)
+  }
+  
+  # Collect tissues based on frequency
+  tissues <- df_shared_casrun2 %>% filter(RUN_N == 3) %>%
+    filter(METABOLITES_N_RUN >= 4) %>% filter(SAMPLES_N_RUN >= 5) %>%
+    filter(RUNS == shared_run_vec) %>% select(TISSUE) %>% unlist() %>% as.character() %>% sort()
+  for(plot_type in plot_types){
+      print(plot_type)
+      # Iterate through tissues
+      i <- 1
+      plot_list <- list()
+      #tissue <- tissues[3]
+      for(tissue in tissues){
+          print(tissue)
+        for(i in 1:3){
+            # Generate the correct comparisons
+            if(i == 1){
+              shared_runs1 <- shared_runs[1]
+              shared_runs2 <- shared_runs[2]
+            }else if(i == 2){
+              shared_runs1 <- shared_runs[1]
+              shared_runs2 <- shared_runs[3]
+            }else if(i == 3){
+              shared_runs1 <- shared_runs[2]
+              shared_runs2 <- shared_runs[3]
+            }
+          comparison <- paste0(shared_runs1,';',shared_runs2)
+            data_dir <- paste0(WD,"/data/site_comparisons/",shared_run_out)
+            if(grepl('mxm',plot_type)){
+              p_file <- paste0(data_dir,"/20201105_pass1a-metabolomics-",tissue,"-mxm-triple-",
+                   as.character(i),"_steep.rds")
+            }else if(plot_type == "sxs-normalized-se"){
+              p_file <- paste0(data_dir,"/20201105_pass1a-metabolomics-",tissue,"-sxs-normalized-se_steep.rds")
+            }else if(plot_type == "sxs-normalized-es"){
+              p_file <- paste0(data_dir,"/20201105_pass1a-metabolomics-",tissue,"-sxs-normalized-es_steep.rds")
+            }
+            comparison <- paste0(shared_runs1,';',shared_runs2)
+          # Load the object into memory
+          data_dir <- paste0(WD,"/data/site_comparisons/",shared_run_out)
+          
+          if(plot_type %in% c('mxm-original', 'mxm-normalized','sxs-original', 'sxs-normalized',
+                              'sxs-normalized-se','sxs-normalized-es')){
+            phm <- readRDS(p_file)
+            plot_list[[i]] <- phm$gtable
+          }else{
+            plot_list[[i]] <- readRDS(p_file)
+          }
+          i <- i + 1
+          }
+   # Save the plots in a grid
+    if(length(plot_list) == 1){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 1
+      w <- 10
+      h <- 10
+    }else if(length(plot_list) == 2){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 2
+      w <- 20
+      h <- 30
+    }else if(length(plot_list) == 3){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 3
+      w <- 30
+      h <- 10
+    }else if(length(plot_list) == 4){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 2
+      w <- 20
+      h <- 20
+    }else if(length(plot_list) == 5){
+      print(length(plot_list))
+      nr <- 1
+      nc <- 5
+      w <- 50
+      h <- 10
+    }else if(length(plot_list) == 6){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 3
+      w <- 30
+      h <- 20
+    }else if(length(plot_list) == 7) {
+      print(length(plot_list))
+      nr <- 1
+      nc <- 7
+      w <- 49
+      h <- 7
+    }else if(length(plot_list) == 8){
+      print(length(plot_list))
+      nr <- 2
+      nc <- 4
+      w <- 20
+      h <- 40
+    }else if(length(plot_list) %in% c(9)){
+      print(length(plot_list))
+      nr <- 3
+      nc <- 3
+      w <- 30
+      h <- 30
+    }
+      
+  
+  plots_out <- marrangeGrob(grobs = plot_list, nrow=nr, ncol=nc, 
+                          layout_matrix = matrix(1:length(plot_list), nr, nc, TRUE))
+  if(T){
+    plot_dir <- paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out)
+    cmd <- paste0('mkdir -p ',plot_dir)
+    system(cmd)
+    ggsave(paste0(WD,'/plots/site_comparisons/across_tissues/',shared_run_out,'/20201104_pass1a-metabolomics-',
+    plot_type,'-',tissue,'_steep.bmp'), plots_out,  width=w, height=h, 
+device = "bmp", dpi = 72)
+  }
+  }
+  }
+}
+
+```
+
+<!-- ### Exploratory Plots for Normalization -->
+<!-- ```{r Exploratory Plots for Normalization} -->
+<!-- # Select n metabolites at random -->
+<!-- set.seed(123) -->
+<!-- sample_mets <- sample(shared_mets, 10) -->
+<!-- # Select n combinations of metabolites at random -->
+<!-- combo_mets <- combinat::combn(sample_mets, 2, simplify = F) %>% sample(4) -->
+<!-- cbo <- combo_mets[1] %>% unlist() -->
+<!-- cbo[1] <- "Alanine" -->
+<!-- cbo[2] <- "Creatine" -->
+<!-- run <- "University of Michigan_rppos" -->
+<!-- # Rename data object -->
+<!-- for(run in names(run_mats)){ -->
+<!--   data <- run_mats[[run]] -->
+<!--   for(cbo in combo_mets){ -->
+<!--   # Remove NA values -->
+<!--   filter1 <- is.na(data[,cbo[1]]) -->
+<!--   tmp1 <-data[!filter1,] -->
+<!--   filter2 <- is.na(data[,cbo[2]]) -->
+<!--   #sum(filter2) -->
+<!--   tmp2 <-data[!filter2,] -->
+<!--   # Plot the raw Abundances -->
+<!--   ######################### -->
+<!--   plot(tmp1[,cbo[1]],tmp2[,cbo[2]], xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Raw Abundances')) -->
+<!--   # Plot the log Abundances -->
+<!--   ######################## -->
+<!--   plot(log(tmp1[,cbo[1]]),log(tmp2[,cbo[2]]), xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Log10 Abundances')) -->
+<!--   # Plot the MA Plot -->
+<!--   x <- tmp1[,cbo[1]] #%>% log() -->
+<!--   y <- tmp2[,cbo[2]] #%>% log() -->
+<!--   plot((x+y)/2,x-y, main = paste0(run,': MA Plot (Log10 Abundances)')) -->
+
+<!--   # Plot the ranked Abundances -->
+<!--   ######################## -->
+<!--   plot(rank(tmp1[,cbo[1]]),rank(tmp2[,cbo[2]]),pch=16,cex=0.6, xlab = cbo[1], ylab = cbo[2], main = paste0(run,': Ranked Abundances')) -->
+<!--   # Plot the Ranked Abundances -->
+<!--   ######################### -->
+<!--   plot(sort(tmp1[,cbo[1]]),  -->
+<!--        ylab = paste0(cbo[1]),  -->
+<!--        main = paste0(run,': Ranked Abundances')) -->
+<!--   plot(sort(tmp1[,cbo[2]]),  -->
+<!--        ylab = paste0(cbo[2]),  -->
+<!--        main = paste0(run,': Ranked Abundances')) -->
+<!--   # Plot The Ranked Log10 Abundances -->
+<!--   ######################## -->
+<!--   plot(log(sort(tmp1[,cbo[1]])),  -->
+<!--        ylab = paste0(cbo[1],' (Log10)'),  -->
+<!--        main = paste0(run,': Ranked Log10 Abundances')) -->
+<!--   plot(log(sort(tmp1[,cbo[2]])),  -->
+<!--        ylab = paste0(cbo[2],' (Log10)'),  -->
+<!--        main = paste0(run,': Ranked Log10 Abundances')) -->
+<!-- } -->
+<!-- } -->
+
+<!-- br<-readRDS(paste0(WD,"/data/20201103_broad-hilicpos-matrix-raw-4-jun_steep.RDS")) -->
+<!-- duke<- readRDS(paste0(WD,"/data/20201103_duke-ac-matrix-raw-4-jun_steep.RDS")) -->
+<!-- br_order1 <- row.names(br) %>% str_split(pattern = "_") %>% map(head(1)) %>% unlist() %>% sort() -->
+<!-- br_order <- paste0(br_order1, "_Broad Institute_hilicpos") -->
+<!-- br <- br[br_order,] -->
+<!-- br_feat <- colnames(br) %>% sort() -->
+<!-- br <- br[,br_feat] -->
+
+<!-- duke_order1 <- row.names(duke) %>% str_split(pattern = "_") %>% map(head(1)) %>% unlist() %>% sort() -->
+<!-- duke_order <- paste0(duke_order1, "_Duke University_ac") -->
+<!-- duke <- duke[duke_order,] -->
+<!-- duke_feat <- colnames(duke) %>% sort() -->
+<!-- duke <- duke[,duke_feat] -->
+
+<!-- duke_order1 == br_order1 -->
+<!-- duke_feat == br_feat -->
+
+<!-- #mismatched orders for both rows and columns -->
+<!-- #sample78<-read.delim("sample78.txt",header=T,row.names=1,sep="\t") -->
+<!-- #feature21<-read.delim("feature21.txt",header=T,row.names=1,sep="\t") -->
+<!-- # br2<-br[order(sample78[,1]),order(feature21[,1])] -->
+<!-- # duke2<-duke[order(sample78[,2]),order(feature21[,2])] -->
+<!-- br2 <- br -->
+<!-- duke2 <- duke -->
+
+<!-- paletteLength <- 100 -->
+<!-- redblue100 <- colorRampPalette(c("blue", "white", "red"))(paletteLength) -->
+
+<!-- image(cor(cbind(br2,duke2),method="spearman"),col=redblue100) -->
+
+<!-- image(cor(cbind(t(br2),t(duke2)),method="spearman"),col=redblue100) -->
+
+<!-- CountZeros <- function(x){ -->
+<!--   sum(x==0) -->
+<!-- } -->
+
+<!-- boxplot(data.frame(br2)) -->
+<!-- f0.duke <- apply(duke2, 2, CountZeros) -->
+<!-- f0.duke -->
+<!-- #remove the 2nd feature -->
+<!-- br2<-br2[,-2] -->
+<!-- duke2<-duke2[,-2] -->
+
+<!-- f.mean.duke<-apply(duke2,2,mean) -->
+<!-- f.mean.br<-apply(br2,2,mean) -->
+<!-- f.median.duke<-apply(duke2,2,median) -->
+<!-- f.median.br<-apply(br2,2,median) -->
+
+<!-- s.median.duke<-apply(duke2,1,median) -->
+<!-- s.median.br<-apply(br2,1,median) -->
+
+<!-- plot(s.median.br,s.median.duke, ylim=c(0,5)) -->
+<!-- library(preprocessCore) -->
+<!-- norm.br<-normalize.quantiles(t(br2)) -->
+<!-- norm.duke<-normalize.quantiles(t(duke2)) -->
+
+<!-- plot(log(norm.br[,5]),pch=16,cex=0.6) -->
+<!-- plot(log(norm.br[rank(norm.br[,2]),5]),pch=16,cex=0.6) -->
+
+<!-- #cannot use due to tied values -->
+<!-- dim(norm.br) -->
+<!-- dim(norm.duke) -->
+<!-- image(cor(cbind(t(norm.br),t(norm.duke)),method="spearman"),col=redblue100) -->
+
+
+<!-- # Look for tied ranks and determine if this is correct -->
+<!-- plot(log(sort(tmp[,3])[1:48])) -->
+
+<!-- ``` -->
 
 

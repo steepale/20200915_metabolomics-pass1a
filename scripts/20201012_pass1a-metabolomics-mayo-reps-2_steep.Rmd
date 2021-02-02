@@ -107,7 +107,8 @@ writeLines("td, th { padding : 3px } th { background-color:white; color:black; b
   + Normalize
   + Plot boxplots and matched density plot after normalization
 
-```{r Boxplots and Density Plots Prior to Normalization, echo = FALSE}
+### Orient Data
+```{r Orient Data, echo = FALSE}
 # Assign Variables
 ################################################################################
 # tissue_study_institute_metab_families <- countdata_df %>%
@@ -202,7 +203,7 @@ plot(p)
 ```
 
 ### Zero/Missing Values in Metabolites (Original Abundances)
-```{r Zero/Missing Values in Metabolites}
+```{r Zero/Missing Values in Metabolites (Original Abundances)}
 # Identify Zero/Missing Values in Metabolites
 ################################################################################
 na_df <- plot_df %>%
@@ -393,6 +394,70 @@ for(metab in scat_met_order){
   geom_abline(linetype="dashed") +
   facet_wrap(~ METABOLITE_NAME) +
   expand_limits(x = 0, y = 0) +
+  #labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances")) +
+  coord_fixed(ratio=1)
+  plot(p)
+}
+```
+
+### MA plots (Original Abundances)
+```{r MA plots (Original Abundances)}
+# Subset the data for sites to compare (scatterplots)
+###################################################
+plot_join_df <- countdata_df %>%
+  ungroup() %>%
+  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+  filter(TISSUE == tissue) %>%
+  filter(NAMED == named) %>%
+  filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
+  unnest(COUNT_DATA) %>%
+  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
+  filter(METABOLITE_NAME %in% metabolites) %>%
+  unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+  mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+                              grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
+                              )) %>%
+  select(REPLICATE,METABOLITE_NAME,labelid,VALUE) %>%
+  mutate(REPLICATE = as.character(REPLICATE)) %>%
+  split(.$REPLICATE) %>%
+  map(~rename(., !!sym(unique(.$REPLICATE)) := "VALUE")) %>%
+  map(~select(., -REPLICATE)) %>%
+  purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+
+# Plot MA plots
+################################################################################
+# Plot MA plots ordered by sample (include R2 values)
+lm_df <- plot_join_df %>%
+  rename(name = METABOLITE_NAME) %>%
+  rename(x = reps[1]) %>%
+  rename(y = reps[2])
+# Iterate through each of the shared metabolites to collect summary info about their correlations
+r2_df <- data.frame()
+for(metab in metabolites){
+  met_df <- lm_df %>%
+    filter(name == metab)
+  r2_df <- rbind(r2_df, lm_eqn(met_df))
+}
+# Display summaries
+met_r2_df <- r2_df %>%
+  arrange(METABOLITE) %>%
+  select(METABOLITE,R2) %>%
+  arrange(desc(R2))
+
+# Collect the order of metabolites
+scat_met_order <- met_r2_df %>% select(METABOLITE) %>% unlist() %>% as.character()
+
+# Plot the scatter plots
+for(metab in scat_met_order){
+  p <- plot_join_df %>%
+    filter(METABOLITE_NAME == metab) %>%
+  ggplot(aes( x = (log(!!sym(reps[1]) + 1) + log(!!sym(reps[2])) + 1)/2, 
+              y = log(!!sym(reps[1]) + 1) - log(!!sym(reps[2]) + 1) ), color = ) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", size = 1) +
+  facet_wrap(~ METABOLITE_NAME) +
+  ylab('Log Ratio') +
+    xlab('Average Log Abundance') +
   #labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances")) +
   coord_fixed(ratio=1)
   plot(p)
@@ -696,6 +761,86 @@ for(metab in scat_met_order){
 #   coord_fixed(ratio=1)
 ```
 
+### MA plots (Normalized Abundances)
+```{r Scatterplots (Normalized Abundances)}
+# Subset the data for sites to compare (scatterplots)
+###################################################
+norm_join_df <- countdata_df %>%
+  ungroup() %>%
+  unite(STUDY_INSTITUTE,METAB_FAMILY, col = "STUDY_INSTITUTE_METAB_FAMILY") %>%
+  filter(TISSUE == tissue) %>%
+  filter(NAMED == named) %>%
+  filter(STUDY_INSTITUTE_METAB_FAMILY == study_institute_metab_family) %>%
+  unnest(COUNT_DATA) %>%
+  filter(viallabel %in% as.character(unlist(sample_join$sample_id))) %>%
+  unite(labelid, viallabel, col = "labelid_viallabel", remove = F) %>%
+  mutate(REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
+                               grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
+  split(.$REPLICATE) %>%
+  map(select, labelid_viallabel, METABOLITE_NAME, VALUE) %>%
+  map(pivot_wider, names_from = METABOLITE_NAME, values_from = VALUE) %>%
+  map(column_to_rownames, var = "labelid_viallabel") %>%
+  map(as.matrix) %>%
+  map(AutoScaleMatrix) %>%
+  map(as.data.frame) %>%
+  map(rownames_to_column, var = "labelid_viallabel") %>%
+  map(pivot_longer, names_to = 'METABOLITE_NAME', values_to = 'VALUE', cols = all_of(metabolites)) %>%
+  map(mutate, REPLICATE = case_when(grepl(paste0(reps[1],"$"),labelid_viallabel) ~ reps[1],
+                                     grepl(paste0(reps[2],"$"),labelid_viallabel) ~ reps[2],
+                                    grepl(paste0(reps[3],"$"),labelid_viallabel) ~ reps[3])) %>%
+  map(~rename(., !!sym(unique(.$REPLICATE)) := "VALUE")) %>%
+  map(~select(., -REPLICATE)) %>%
+  map(mutate, labelid = gsub(pattern = "_..*", replacement = '', labelid_viallabel)) %>%
+  map(select, -labelid_viallabel) %>%
+  purrr::reduce(left_join, by = c("labelid","METABOLITE_NAME"))
+
+# Plot MA plots
+################################################################################
+# Plot MA plots ordered by sample (include R2 values)
+lm_df <- norm_join_df %>%
+  rename(name = METABOLITE_NAME) %>%
+  rename(x = reps[1]) %>%
+  rename(y = reps[2])
+# Iterate through each of the shared metabolites to collect summary info about their correlations
+r2_df <- data.frame()
+for(metab in metabolites){
+  met_df <- lm_df %>%
+    filter(name == metab)
+  r2_df <- rbind(r2_df, lm_eqn(met_df))
+}
+# Display summaries
+met_r2_df <- r2_df %>%
+  arrange(METABOLITE) %>%
+  select(METABOLITE,R2) %>%
+  arrange(desc(R2))
+met_r2_df %>%
+  knitr::kable(format = "html") %>%
+  scroll_box(width = "100%", height = "200px")
+
+# Collect the order of metabolites
+scat_met_order <- met_r2_df %>% select(METABOLITE) %>% unlist() %>% as.character()
+
+
+# Plot the MA Plots
+################################################################################
+for(metab in scat_met_order){
+  p <- norm_join_df %>%
+    filter(METABOLITE_NAME == metab) %>%
+  ggplot(aes( x = (log(!!sym(reps[1])) + log(!!sym(reps[2])))/2, 
+              y = log(!!sym(reps[1])) - log(!!sym(reps[2])) ), color = ) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", size = 1) +
+  facet_wrap(~ METABOLITE_NAME) +
+  ylab('Log Ratio') +
+    xlab('Average Log Abundance') +
+  #labs(title=paste0(tissue,' ',study_institute_metab_family,": Normalized Metabolite Abundances")) +
+  coord_fixed(ratio=1)
+  plot(p)
+}
+```
+
+
 ### Distributions (Normalized Abundances)
 ```{r Distributions (Normalized Abundances)}
 # Plot the density plot for all the gene counts
@@ -726,7 +871,7 @@ df_all
 ```
 
 ### Sample by Sample Correlations (Normalized Abundances)
-```{r Sample by Sample Correlations}
+```{r Sample by Sample Correlations (Normalized Abundances)}
 ################################################################################
 ####################### Sample by Sample Correlations ##########################
 ################################################################################

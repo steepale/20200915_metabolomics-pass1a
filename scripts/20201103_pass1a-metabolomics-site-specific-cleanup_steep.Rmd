@@ -1,0 +1,626 @@
+---
+title: | 
+ | PASS1A (Rat) Metabolomics: 
+ | Feature Removal and Imputation
+author: "Alec Steep"
+date: "11/00/2020"
+always_allow_html: true
+output: 
+  html_document:
+    toc: true
+    code_folding: hide
+    highlight: zenburn
+    css: ../css/style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+
+# To Render the Markdown, run this line in console
+#rmarkdown::render('/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/scripts/20201103_pass1a-metabolomics-site-specific-eda_steep.Rmd', output_file = '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/reports/20201103_pass1a-metabolomics-site-specific-eda_steep.html', quiet = TRUE, clean = TRUE)
+```
+
+##### CSS Top Styling
+```{r CSS Top Styling}
+writeLines("td, th { padding : 3px } th { background-color:white; color:black; border:1px solid black; text-align:center } td {color:black; border:1px solid black; word-wrap:break-word; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; max-width:300px; text-align:left}", con= "../css/style.css")
+
+```
+
+## Goals of Analysis
+  + Systematically compare shared metabolites and samples across CAS sites
+
+## Analysis
+
+### Setup the Environment
+```{r Setup the Environment, message=FALSE, results='hide', warning = FALSE, echo = FALSE}
+################################################################################
+##### Resources and Dependencies ###############################################
+################################################################################
+
+# Set the working directory
+#############################################################################
+COMP <- "MacBook" 
+#COMP <- "GreatLakes"       
+if(COMP == "MacBook"){
+        # MacBook
+        WD <- '/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a'    
+}else if(COMP == "GreatLakes"){
+        # MichMed
+        WD <- '/home/acsteep/motrpac/20200915_metabolomics-pass1a'
+}
+rm(COMP)
+
+#setwd(WD)
+
+# Load the dependencies
+#source("https://bioconductor.org/biocLite.R")
+#BiocManager::install("org.Rn.eg.db")
+#install.packages("tidyverse")
+
+# Load dependencies
+pacs...man <- c("tidyverse", "data.table","rlang","RColorBrewer","MASS","sfsmisc",
+                "pheatmap","caret","ggforce","RANN","kableExtra","gtools","combinat",
+                "ggrepel","VIM","mice")
+for(pac in pacs...man){
+  suppressWarnings(suppressPackageStartupMessages(library(pac, character.only = TRUE)))
+}
+
+############################################################
+##### Functions ############################################
+############################################################
+
+# Name functions
+select <- dplyr::select
+counts <- DESeq2::counts
+map <- purrr::map
+desc <- dplyr::desc
+arrange <- dplyr::arrange
+melt <- reshape2::melt
+mutate <- dplyr::mutate
+
+# Global options
+options(dplyr.print_max = 100)
+options(scipen=10000)
+
+# Source the functions
+source(paste0(WD,'/functions/not_in.R'))
+source(paste0(WD,'/functions/rat_mouse_ortho.R'))
+source(paste0(WD,'/functions/mouse2rat_ortho.R'))
+source(paste0(WD,'/functions/lmp.R'))
+source(paste0(WD,'/functions/cor_PC_1_6.R'))
+source(paste0(WD,'/functions/elbow_finder.R'))
+source(paste0(WD,'/functions/cor_outlier2.R'))
+source(paste0(WD,'/functions/DissimilarityMatrixNominal.R'))
+source(paste0(WD,'/functions/lm_eqn.R'))
+source(paste0(WD,'/functions/reorder_cormat.R'))
+source(paste0(WD,'/functions/save_pheatmap_pdf.R'))
+source(paste0(WD,'/functions/modeav.R'))
+source(paste0(WD,'/functions/count_na.R'))
+source(paste0(WD,'/functions/se_mean.R'))
+source(paste0(WD,'/functions/Mode.R'))
+source(paste0(WD,'/functions/NumericSummaryStats.R'))
+source(paste0(WD,'/functions/AutoScaleMatrix.R'))
+source(paste0(WD,'/functions/ReverseAutoScaleMatrix.R'))
+source(paste0(WD,'/functions/CenterMatrix.R'))
+source(paste0(WD,'/functions/RangeScaleMatrix.R'))
+source(paste0(WD,'/functions/ParetoScaleMatrix.R'))
+source(paste0(WD,'/functions/VastScaleMatrix.R'))
+source(paste0(WD,'/functions/LevelScaleMatrix.R'))
+source(paste0(WD,'/functions/Log10Matrix.R'))
+source(paste0(WD,'/functions/PowerMatrix.R'))
+
+```
+
+### Dataset
+```{r Dataset Data Format}
+print(descriptor)
+
+```
+
+
+### Zero/Missing Values in Metabolites
+-Note: TODO: Adjust script to account for Emory
+
+```{r Zero/Missing Values in Metabolites}
+if(site != 'Emory University'){
+# Identify Zero/Missing Values in Metabolites
+################################################################################
+  
+  # Variables
+  ##################
+  # Min values (that isn't zero)
+  min_val <- dataset_df$VALUE[dataset_df$VALUE != 0] %>% min(na.rm = T)
+  # Samples
+  sams <- dataset_df %>%
+    filter(!is.na(labelid)) %>%
+    select(labelid) %>% unlist() %>% unique()
+  
+  na_df <- dataset_df %>%
+    ungroup() %>% 
+    filter(!is.na(labelid)) %>%
+    mutate(ZERO_LOG = ifelse(VALUE == 0, 1, 0)) %>%
+    mutate(NA_LOG = ifelse(is.na(VALUE), 1, 0)) %>%
+    group_by(METABOLITE_NAME) %>%
+    mutate(MIN = VALUE[VALUE != 0] %>% min(na.rm = T)) %>%
+    mutate(MAX = VALUE[VALUE != 0] %>% max(na.rm = T)) %>%
+    mutate(MEAN = VALUE[VALUE != 0] %>% mean(na.rm = T)) %>%
+    mutate(MEDIAN = VALUE[VALUE != 0] %>% median(na.rm = T)) %>%
+    mutate(Q1 = quantile(VALUE[VALUE != 0], na.rm = TRUE, probs = 0.25) %>% round(digits = 2)) %>%
+    mutate(Q3 = quantile(VALUE[VALUE != 0], na.rm = TRUE, probs = 0.75) %>% round(digits = 2)) %>%
+    mutate(ZERO_N = sum(ZERO_LOG, na.rm = T)) %>%
+    mutate(ZERO_FREQ = round(ZERO_N/length(sams), digits = 2)) %>%
+    mutate(NA_N = sum(NA_LOG, na.rm = T)) %>%
+    mutate(NA_FREQ = round(NA_N/length(sams), digits = 2)) %>%
+    select(DATASET,TISSUE,STUDY_INSTITUTE,METAB_FAMILY,CH_CHROMATOGRAPHY_TYPE,
+           MS_TYPE,MS_ION_MODE,METABOLITE_NAME, ZERO_N, ZERO_FREQ, NA_N, NA_FREQ,
+           MIN,Q1,MEDIAN,Q3,MAX) %>%
+    unique() %>%
+    arrange(desc(NA_FREQ), desc(ZERO_FREQ)) %>%
+    ungroup()
+  
+  # Visualize the results
+  ################
+  na_df %>%
+    filter(!(ZERO_N == 0 & NA_N == 0)) %>%
+    select(METABOLITE_NAME, ZERO_FREQ ,NA_FREQ) 
+}
+```
+### Zero/Missing Values in Samples
+-Note: TODO: Adjust script to account for Emory
+
+```{r Zero/Missing Values in Metabolites}
+if(site != 'Emory University'){
+# Identify Zero/Missing Values in Metabolites
+################################################################################
+  
+  # Variables
+  ##################
+  # Min values (that isn't zero)
+  min_val <- dataset_df$VALUE[dataset_df$VALUE != 0] %>% min(na.rm = T)
+  # Samples
+  sams <- dataset_df %>%
+    filter(!is.na(labelid)) %>%
+    select(labelid) %>% unlist() %>% unique()
+  
+  sample_na_df <- dataset_df %>%
+    ungroup() %>% 
+    filter(!is.na(labelid)) %>%
+    mutate(ZERO_LOG = ifelse(VALUE == 0, 1, 0)) %>%
+    mutate(NA_LOG = ifelse(is.na(VALUE), 1, 0)) %>%
+    group_by(labelid) %>%
+    mutate(MIN = VALUE[VALUE != 0] %>% min(na.rm = T)) %>%
+    mutate(MAX = VALUE[VALUE != 0] %>% max(na.rm = T)) %>%
+    mutate(MEAN = VALUE[VALUE != 0] %>% mean(na.rm = T)) %>%
+    mutate(MEDIAN = VALUE[VALUE != 0] %>% median(na.rm = T)) %>%
+    mutate(Q1 = quantile(VALUE[VALUE != 0], na.rm = TRUE, probs = 0.25) %>% round(digits = 2)) %>%
+    mutate(Q3 = quantile(VALUE[VALUE != 0], na.rm = TRUE, probs = 0.75) %>% round(digits = 2)) %>%
+    mutate(ZERO_N = sum(ZERO_LOG, na.rm = T)) %>%
+    mutate(ZERO_FREQ = round(ZERO_N/length(sams), digits = 2)) %>%
+    mutate(NA_N = sum(NA_LOG, na.rm = T)) %>%
+    mutate(NA_FREQ = round(NA_N/length(sams), digits = 2)) %>%
+    select(DATASET,TISSUE,STUDY_INSTITUTE,METAB_FAMILY,CH_CHROMATOGRAPHY_TYPE,
+           MS_TYPE,MS_ION_MODE,labelid, ZERO_N, ZERO_FREQ, NA_N, NA_FREQ,
+           MIN,Q1,MEDIAN,Q3,MAX) %>%
+    unique() %>%
+    arrange(desc(NA_FREQ), desc(ZERO_FREQ)) %>%
+    ungroup()
+  
+  # Visualize the results
+  ################
+  sample_na_df %>%
+    filter(!(ZERO_N == 0 & NA_N == 0)) %>%
+    select(labelid, ZERO_FREQ ,NA_FREQ) 
+}
+```
+
+### Examine Boxplot of All Metabolites
+```{r Examine Boxplot of all Metabolites}
+# Variables
+###############
+join_df <- na_df %>%
+  select(METABOLITE_NAME,ZERO_N,ZERO_FREQ,NA_N,NA_FREQ)
+miss_mets <- na_df %>%
+  filter(ZERO_FREQ > 0) %>%
+  select(METABOLITE_NAME) %>% unique() %>% unlist() %>% as.character()
+na_mets <- na_df %>%
+  filter(NA_FREQ > 0) %>%
+  select(METABOLITE_NAME) %>% unique() %>% unlist() %>% as.character()
+
+# Plot Boxplots (with high abundance metabolites)
+#########################################
+if(sum(na_df$ZERO_FREQ) > 0){
+  # Variables
+  ZERO_Q1 <- na_df %>%
+    filter(ZERO_FREQ > 0) %>%
+    select(Q1) %>% unlist() %>% as.numeric() %>%
+    median(na.rm = T)
+  # Raw (Zero)
+  p <- dataset_df %>%
+    left_join(y = join_df, by = 'METABOLITE_NAME') %>%
+    ggplot(aes(y = VALUE, x = METABOLITE_NAME, color = ZERO_FREQ)) +
+    geom_boxplot(alpha = 0.8) +
+    labs(title= "Original", y = "Abundance", x = "") +
+    theme(axis.text.x = element_text(size = 5, angle = 90)) +
+    theme(legend.text = element_text(size=8),
+        legend.title = element_text(size = 7))
+  plot(p)
+
+  # Raw
+  p <- dataset_df %>%
+    left_join(y = join_df, by = 'METABOLITE_NAME') %>%
+    ggplot(aes(y = VALUE, x = METABOLITE_NAME, color = ZERO_FREQ)) +
+    geom_boxplot(alpha = 0.8) +
+    labs(title= "Original: Truncated", y = "Abundance", x = "") +
+    ylim(0,ZERO_Q1)+
+    theme(axis.text.x = element_text(size = 5, angle = 90)) +
+    theme(legend.text = element_text(size=8),
+        legend.title = element_text(size = 7))
+  plot(p)
+}
+
+if(sum(na_df$NA_FREQ) > 0){
+  # Variables
+  NA_Q1 <- na_df %>%
+    filter(NA_FREQ > 0) %>%
+    select(Q1) %>% unlist() %>% as.numeric() %>%
+    median(na.rm = T)
+  
+  # Raw (NA)
+  p <- dataset_df %>%
+    left_join(y = join_df, by = 'METABOLITE_NAME') %>%
+    mutate(NA_LAB = ifelse(NA_FREQ>0, METABOLITE_NAME, '')) %>%
+    ggplot(aes(y = VALUE, x = METABOLITE_NAME, color = NA_LAB)) +
+    geom_boxplot(alpha = 0.8) +
+    labs(title= "Original", y = "Abundance", x = "") +
+    theme(axis.text.x = element_text(size = 5, angle = 90)) +
+    theme(legend.text = element_text(size=8),
+        legend.title = element_text(size = 7))
+  plot(p)
+  # Truncated
+  p <- dataset_df %>%
+    left_join(y = join_df, by = 'METABOLITE_NAME') %>%
+    mutate(NA_LAB = ifelse(NA_FREQ>0, METABOLITE_NAME, '')) %>%
+    ggplot(aes(y = VALUE, x = METABOLITE_NAME, color = NA_LAB)) +
+    geom_boxplot(alpha = 0.8) +
+    labs(title= "Original: Truncated", y = "Abundance", x = "") +
+    ylim(0,median(na_df$Q1, na.rm = T))+
+    theme(axis.text.x = element_text(size = 5, angle = 90)) +
+    theme(legend.text = element_text(size=8),
+        legend.title = element_text(size = 7))
+  plot(p)
+  # Just the NA mets, truncated
+  # Truncated
+  p <- dataset_df %>%
+    filter(METABOLITE_NAME %in% na_mets) %>%
+    left_join(y = join_df, by = 'METABOLITE_NAME') %>%
+    ggplot(aes(y = VALUE, x = METABOLITE_NAME, color = NA_N)) +
+    geom_boxplot(alpha = 0.8) +
+    labs(title= "Original: Truncated", y = "Abundance", x = "") +
+    ylim(0,NA_Q1)+
+    theme(axis.text.x = element_text(size = 5, angle = 90)) +
+    theme(legend.text = element_text(size=8),
+        legend.title = element_text(size = 7))
+  plot(p)
+}
+
+```
+
+### Scatterplots of Metabolites with Missing Values
+```{r Scatterplots of Metabolites with Missing Values}
+# Variables
+################
+miss_mets <- na_df %>%
+  filter(ZERO_FREQ > 0.5) %>%
+  select(METABOLITE_NAME) %>% unique() %>% unlist() %>% as.character()
+na_mets <- na_df %>%
+  filter(NA_FREQ > 0) %>%
+  select(METABOLITE_NAME) %>% unique() %>% unlist() %>% as.character()
+plot_df <- dataset_df %>%
+  filter(!is.na(labelid)) %>%
+    left_join(y = pheno_df, by = "viallabel")
+
+# DEV
+################
+#met <- miss_mets[1]
+#met <- na_mets[1]
+
+for(met in c(na_mets,miss_mets)){
+  # Variables
+  M_Q1 <- na_df %>%
+    filter(METABOLITE_NAME == met) %>%
+    select(Q1) %>% unlist() %>% as.numeric() %>%
+    median(na.rm = T)
+  # Examine biological features
+  p <- plot_df %>%
+    filter(METABOLITE_NAME == met) %>%
+    mutate(Key.anirandgroup = factor(Key.anirandgroup, levels = ec_levels)) %>%
+    ggplot(aes(x = Key.anirandgroup, y = VALUE, color = Key.anirandgroup)) +
+    geom_boxplot() +
+    geom_jitter(height = 0) +
+    ggtitle(met) +
+    scale_color_manual(values=ec_colors) +
+    theme(axis.text.x = element_text(size = 10, angle = 90)) +
+    theme(aspect.ratio=1)
+  plot(p)
+  p1 <- plot_df %>%
+    filter(METABOLITE_NAME == met) %>%
+    mutate(Key.anirandgroup = factor(Key.anirandgroup, levels = ec_levels)) %>%
+    ggplot(aes(x = Key.anirandgroup, y = VALUE, color = Key.anirandgroup)) +
+    geom_boxplot() +
+    geom_jitter(data = filter(plot_df,METABOLITE_NAME == met), 
+                aes(Key.anirandgroup, y = VALUE), height = 0) +
+    ggtitle(paste0(met," Truncated")) +
+    ylim(0,M_Q1) +
+    scale_color_manual(values=ec_colors) +
+    theme(axis.text.x = element_text(size = 10, angle = 90)) +
+    theme(aspect.ratio=1)
+  plot(p1)
+  p2 <- plot_df %>%
+    filter(METABOLITE_NAME == met) %>%
+    mutate(Registration.sex = factor(Registration.sex)) %>%
+    ggplot(aes(x = Registration.sex, y = VALUE, color = Registration.sex)) +
+    geom_boxplot() +
+    geom_jitter(height = 0) +
+    ggtitle(met) +
+    theme(aspect.ratio=1)
+  plot(p2)
+}
+
+
+```
+
+### Determine Which Values Corrlate most with Metabolites with Missing Values
+
+### 
+```{r Determine Which Values Corrlate most with Metabolites with Missing Values}
+
+
+# Generate a histogram of features with zero values
+na_df %>%
+  ggplot(aes(x = ZERO_FREQ)) +
+  geom_histogram() +
+  geom_density() +
+  xlim(0,1)
+
+# Generate a histogram of features with missing values
+na_df %>%
+  ggplot(aes(x = NA_FREQ)) +
+  geom_histogram() +
+  geom_density() +
+  xlim(0,1)
+
+
+features_removed <- na_df %>%
+  filter(NA_FREQ >= 0.75) %>%
+  select(METABOLITE_NAME) %>% unlist() %>% as.character()
+features_removed
+# Print features removed
+
+
+```
+
+### Collect Correlation Values Between Features
+```{r}
+# Variables
+################
+# Select the metabolite to impute
+imp_mets <- na_df %>%
+  filter(NA_FREQ > 0) %>%
+  arrange(NA_FREQ) %>%
+  select(METABOLITE_NAME) %>% unique() %>% unlist() %>% as.character()
+# Remove the samples with missing values
+plot_df <- dataset_df %>%
+  filter(METABOLITE_NAME %!in% features_removed) %>%
+  filter(!is.na(labelid)) %>%
+  select(METABOLITE_NAME, viallabel,VALUE) %>%
+  mutate(VALUE = as.numeric(VALUE)) %>%
+  pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE)
+# Convert data to matrix
+plot_mat <- dataset_df %>%
+  filter(METABOLITE_NAME %!in% features_removed) %>%
+  #replace_na(list(VALUE = 0)) %>%
+  filter(!is.na(labelid)) %>%
+  select(METABOLITE_NAME, viallabel,VALUE) %>%
+  mutate(VALUE = as.numeric(VALUE)) %>%
+  pivot_wider(names_from = METABOLITE_NAME, values_from = VALUE) %>%
+  tibble::column_to_rownames(var = "viallabel") %>%
+  as.matrix()
+
+# Create correlation matrix
+###########################
+Corr <- 'Pearson'
+#Corr <- 'Spearman'
+# Create an PxP Matrix of correlation
+if(Corr == 'Pearson'){
+        cor1 <- stats::cor(plot_mat, method = 'pearson', use = "pairwise.complete.obs") %>% round(digits = 3)
+}else if(Corr == 'Spearman'){
+        cor1 <- stats::cor(plot_mat, method = 'spearman') %>% round(digits = 3)
+}
+
+# Orient the colors and breaks
+paletteLength <- 1000
+myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(-1, 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(1/paletteLength, 1, length.out=floor(paletteLength/2)))
+
+# Plot the heatmap
+p1 <- pheatmap(cor1, color=myColor, breaks=myBreaks,
+              main = descriptor,
+              cluster_rows = T, cluster_cols = T,fontsize = 8,
+              show_rownames = F, show_colnames = F,
+              legend = F, drop_levels = F)
+
+```
+
+### Impute Values with KNN imputation
+```{r Impute Values}
+# if(descriptor == "BroadInstitute-hippocampus-hilicpos-HILIC-ESI-positive-named-untargeted" &
+#    met == "Atenolol"){
+#   outlier = T
+# }else{
+#      outlier = F
+#    }
+# Find the features most correlated with the metabolite with the least NA values to the most
+##########################
+# Save the correlation matrix values values
+# DEV
+#################
+#met <- imp_mets[1]
+#cm <- corr_mets[1]
+outlier = F
+imp_list <- list()
+out_list <- list()
+mice_df <- plot_df
+imp_mets <- imp_mets[imp_mets %!in% features_removed]
+for(met in imp_mets[1]){
+  corr_vals <- cor1[met,(names(cor1[met,]) != met)] %>% sort() %>% rev()
+  corr_mets <- names(corr_vals > 0.5)[1:4]
+  # Samples with missing values
+  miss_sams <- plot_df %>%
+    filter(is.na(!!sym(met))) %>%
+    select(viallabel) %>% unlist() %>% as.character()
+  # Collect the original matrix
+  mat_org <- plot_df %>% 
+    select(-imp_mets[imp_mets != met]) %>%
+    select(-viallabel) %>%
+    as.matrix()
+  # Original rownames
+  rownames_org <- plot_df$viallabel
+  # Scale the original matrix
+  imp_mat <- plot_df %>%
+    select(-imp_mets[imp_mets != met]) %>% 
+    select(-viallabel) %>%
+    as.matrix() %>% AutoScaleMatrix()
+  
+  # Use a knn method to impute missing values (need to come back and adjust)
+  preProcValues <- preProcess(imp_mat,
+                              method = c("knnImpute"),
+                            k = 9,
+                            knnSummary = mean)
+  
+  # To get the normalizaed data
+  imp_mat <- predict(preProcValues, imp_mat, na.action = na.pass)
+  
+  # Revert back
+  imp_df <- data.frame(ReverseAutoScaleMatrix(mat_org = mat_org, mat_norm = imp_mat)[,met])
+  names(imp_df) <- met
+  out_list <- c(out_list, imp_df)
+  
+   # Visualize the values from missing metabolite
+  print(met)
+  print("Missing Values:")
+  plot_df[[met]] %>% print()
+  print("Imputed Results:")
+  imp_df[[met]][is.na(plot_df[[met]])] %>% print()
+  
+  # Generate margin plots
+  for(cm in corr_mets){
+    max_val <- max(as.numeric(unlist(plot_df[[met]])), na.rm = T)
+    if(outlier){
+      marg_df <- plot_df
+      marg_df[[met]] <- c(plot_df[[met]][plot_df[[met]] != max_val],NA)
+      marginplot(marg_df[, c(met, cm)], 
+               col = mdc(1:2), cex = 1.2,
+               cex.lab = 1.2, cex.numbers = 1.3, pch = 19)
+    }else(
+      marginplot(plot_df[, c(met, cm)], 
+               col = mdc(1:2), cex = 1.2,
+               cex.lab = 1.2, cex.numbers = 1.3, pch = 19)
+    )
+  }
+  for(cm in corr_mets){
+  # Plot imputed values
+      marg_plot <- cbind(imp_df,plot_df[,cm])
+      marginplot(marg_plot, 
+               col = mdc(1:2), cex = 1.2,
+               cex.lab = 1.2, cex.numbers = 1.3, pch = 19)
+  }
+  
+# PCA: Post-Imputation
+#################
+pca <- prcomp(na.omit(imp_mat), scale. = F)
+percentVar <- pca$sdev^2/sum(pca$sdev^2)
+PC <- pca$x %>% as.data.frame()
+#PC$METABOLITE <- as.character(row.names(pca$x))
+PC$viallabel <- rownames_org
+PC <- PC %>%
+  mutate(NA_SAM = ifelse(viallabel %in% miss_sams, '1', '0'))
+
+p0 <- PC %>%
+  ggplot(aes(x = PC1, y = PC2, color = NA_SAM)) +
+  geom_point(size = 3) +
+  #geom_text_repel(aes(label = viallabel))
+  ggtitle(paste0(met,': Shared Samples and Metabolites')) +
+  xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
+  ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
+  theme(aspect.ratio=1)
+plot(p0)
+  
+  # Compare your imputation with that from mice
+  ########################
+  # clean_names[grepl("1",clean_names)]
+  #  dirty_names <- colnames(mat_org)
+  # clean_names <- dirty_names %>%
+  #   str_remove_all(' ') %>%
+  #   str_remove_all('/') %>%
+  #   str_remove_all('-') %>%
+  #   str_remove_all(',') %>%
+  #   str_replace_all('0','a') %>%
+  #   str_replace_all('1','b') %>%
+  #   str_replace_all('2','c') %>%
+  #   str_replace_all('3','d') %>%
+  #   str_replace_all('4','e') %>%
+  #   str_replace_all('5','f') %>%
+  #   str_replace_all('6','g') %>%
+  #   str_replace_all('7','h') %>%
+  #   str_replace_all('8','i') %>%
+  #   str_replace_all('9','j') %>%
+  #   str_replace_all(':','_') %>%
+  #   str_replace_all("\\)",'_') %>%
+  #   str_replace_all("\\(",'_') %>%
+  #   str_replace_all("\\]",'_') %>%
+  #   str_replace_all("\\[",'_')
+  # 
+  #  colnames(mat_org) <- clean_names
+  #  mice_df <- mat_org
+  #  plot_imp_df <- mice(mice_df, seed = 123)
+  #  summary(plot_imp_df)
+  #  complete(plot_imp_df, action=1)
+
+}
+out_df <- data.frame(out_list, check.names = F)
+#out_df
+
+```
+
+```{r Low Imputation Values}
+ na_df %>%
+    filter(METABOLITE_NAME == "CAR(20:0)")
+```
+
+
+### Documentation of Imputation Method and Predictors
+```{r}
+
+# Demonstrate how well knn worked for each metabolite
+
+
+
+
+
+
+```
+
+
+
+
+
+## Session Info
+```{r Sesh}
+session_info()
+```
