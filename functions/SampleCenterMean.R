@@ -13,7 +13,7 @@ SampleCenterMean <- function(mat){
         mat_out <- mat
         for(n in 1:nrow(mat)){
           # Center
-          mat_out[n,] <- (mat[n,] - mean(mat[n,],na.rm=T))
+          mat_out[n,] <- (mat[n,] - mean(mat[n,], na.rm=T))
         }
         # Output data
         mat_out

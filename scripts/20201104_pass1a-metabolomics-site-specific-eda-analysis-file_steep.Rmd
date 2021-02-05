@@ -181,7 +181,7 @@ if(norm_order == 'none' & run_sam_norm == T & run_feat_norm == T){
 }else if(norm_order == 'feat_sam' & run_sam_norm == F & run_feat_norm == F){
   stop('Cannot put sam_feat in normalization order if no normalization to occur')
 }else if(norm_order == 'feat_sam' & run_sam_norm == T & run_feat_norm == F){
-  stop('Normalization order is feat_sam but only sam is normalizaed')
+  stop('Normalization order is feat_sam but only sam is normalized')
 }
 
 # Remove the list
@@ -218,7 +218,7 @@ MeasureZeroMissing <- function(tissue,
     select(TISSUE,STUDY_INSTITUTE_METAB_FAMILY, METABOLITE_NAME, ZERO_N, ZERO_FREQ, NA_N, NA_FREQ,
            MEAN, MIN,Q1, MEDIAN, Q3, MAX) %>%
     unique() %>%
-    arrange(STUDY_INSTITUTE_METAB_FAMILY, desc(NA_FREQ), desc(ZERO_FREQ)) %>%
+    arrange(desc(NA_FREQ), desc(ZERO_FREQ), STUDY_INSTITUTE_METAB_FAMILY) %>%
     ungroup()
 
 # Remove Metabolites with high NAor Zero Frequencies
@@ -289,7 +289,7 @@ rm(zero_list)
 
 # Visualize output
 ################
-#na_df
+#na_df %>% head()
 }
 ```
 
@@ -354,9 +354,15 @@ plot_df <- imp_list[['plot_df']]
 
 # Remove output list
 #################
-rm(imp_list)
+#rm(imp_list)
 
 }
+
+# Sanity Check
+# all(plot_df2$METABOLITE_NAME == plot_df$METABOLITE_NAME)
+# all(plot_df2$labelid == plot_df$labelid)
+# all(plot_df2$VALUE == plot_df$VALUE)
+
 ```
 
 ##### SamNorm function
@@ -438,25 +444,9 @@ SamNorm <- function(norm_df,
   
   # Log transform the data
   if(log_method == "log10" & norm_order == 'sam_feat'){
-     norm_df <- norm_df %>%
-         map(log, 10)
+     norm_df[[1]] <- log(norm_df[[1]])
+     norm_df[[2]] <- log(norm_df[[2]])
   }
-  
-  # # Plot the sample medians
-  # if(plot_median_xy_before){
-  #   s.median.1 <-apply(norm_df[[1]],1,median)
-  #   s.median.2 <-apply(norm_df[[2]],1,median)
-  #   s.median_df <- data.frame(s.median.1, s.median.2)
-  #   p <- s.median_df %>%
-  #     ggplot(aes(x = s.median.1, y = s.median.2)) +
-  #     geom_point() +
-  #     geom_smooth(method = "lm", size = 1, alpha = 0.5, formula = y ~ x) +
-  #     ggtitle(paste0(toupper(tissue),' (Before)')) +
-  #     xlab(shared_runs[1]) +
-  #     ylab(shared_runs[2]) +
-  #     theme(aspect.ratio = 1)
-  #   plot(p)
-  # }
   
   # Center the data
   #########################
@@ -467,7 +457,7 @@ SamNorm <- function(norm_df,
     norm_df <- norm_df %>%
         map(SampleCenterMean)
   }
-  norm_df
+  
   # Examine the variance per sample, if different then its might be appropriate to scale
   if(plot_variance_before){
     RowVar <- function(x, ...) {
@@ -625,8 +615,8 @@ FeatNorm <- function(plot_df,
   #       map(as.matrix)
   
   if(log_method == "log10" & norm_order == 'feat_sam'){
-     norm_df <- norm_df %>%
-         map(log, 10)
+     norm_df[[1]] <- log(norm_df[[1]])
+     norm_df[[2]] <- log(norm_df[[2]])
   }
   #   # norm_join_df <- norm_join_df %>%
   #   #     map(log, 10)
@@ -1132,7 +1122,7 @@ if(all(colord1 == colord2) & all(roword1 == roword2)){
 }
 
 # Create an NxN Matrix of correlation
-cor1 <- stats::cor(shared_sam_mat, method = corr_method) %>% round(digits = 3)
+cor1 <- stats::cor(shared_sam_mat, method = corr_method)
 cor1 <- cor1[sort(rownames(cor1)),sort(colnames(cor1))]
 cor1 <- cor1[grepl(shared_runs[1], rownames(cor1)),grepl(shared_runs[2], colnames(cor1))]
 
@@ -1285,9 +1275,10 @@ rank_m<- (row_rank_c1_2+col_rank_c1_2)/length(c(row_rank_c1_2,col_rank_c1_2))
 # nrow(cor1) - mean(col_rank_c1_2, na.rm = T)
 # Collect the average ranks
 
+
 all_rank_df <- data.frame(labelid = rank_sams, ROW_RANK = row_rank_c1_2, 
                           COL_RANK = col_rank_c1_2, TISSUE = tissue,
-                        RUN = shared_runs) %>%
+                        RUN = paste(shared_runs, collapse = ';')) %>%
   rowwise() %>%
   mutate(RANK = mean(c(ROW_RANK,COL_RANK), na.rm = T)) %>%
   ungroup() %>%
@@ -1310,12 +1301,12 @@ if(save_files){
   # saveRDS(d, file = d_file)
   # Save as an R object and PDF
   ####################################
-  if(annotation_order == 'sex_exercise'){
+  if(annotation_order == 'sex_exercise' & plot_heatmap){
     p1_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-se_steep.rds")
     saveRDS(p1, file = p1_file)
     p1_pdf <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-se_steep.pdf")
     save_pheatmap_pdf(p1, filename = p1_pdf)
-  }else if(annotation_order == 'exercise_sex'){
+  }else if(annotation_order == 'exercise_sex' & plot_heatmap){
     p2_file <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-es_steep.rds")
     saveRDS(p1, file = p2_file)
     p2_pdf <- paste0(data_dir,"/20201104_pass1a-metabolomics-",tissue,"-sxs-normalized-es_steep.pdf")
@@ -1436,7 +1427,7 @@ if(all(colord1 == colord2) & all(roword1 == roword2)){
 }
 
 # Create an NxN Matrix of correlation
-cor1 <- stats::cor(shared_met_mat, method = corr_method) %>% round(digits = 3)
+cor1 <- stats::cor(shared_met_mat, method = corr_method)
 
 # Subset the proper values for the cross correlation matrices
 cor1 <- cor1[sort(rownames(cor1)),sort(colnames(cor1))]
@@ -1740,7 +1731,7 @@ nrow(cor1) - mean(col_rank_c1_2, na.rm = T)
 # Collect the average ranks
 all_rank_df <- data.frame(METABOLITE_NAME = rank_mets, ROW_RANK = row_rank_c1_2, 
                           COL_RANK = col_rank_c1_2, TISSUE = tissue,
-                        RUN = shared_runs) %>%
+                        RUN = paste(shared_runs, collapse = ';')) %>%
   rowwise() %>%
   mutate(RANK = mean(c(ROW_RANK,COL_RANK), na.rm = T)) %>%
   ungroup() %>%
@@ -1996,9 +1987,9 @@ if(all(colord1 == colord2) & all(roword1 == roword2)){
 Corr <- 'Spearman'
 # Create an NxN Matrix of correlation
 if(Corr == 'Pearson'){
-        cor1 <- stats::cor(shared_met_mat, method = 'pearson') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_met_mat, method = 'pearson')
 }else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(shared_met_mat, method = 'spearman') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_met_mat, method = 'spearman')
 }
 
 # Reorder the correlation matrix
@@ -2093,9 +2084,9 @@ if(all(colord1 == colord2) & all(roword1 == roword2)){
 # Create an NxN Matrix of correlation
 Corr <- 'Spearman'
 if(Corr == 'Pearson'){
-        cor1 <- stats::cor(shared_sam_mat, method = 'pearson') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_sam_mat, method = 'pearson')
 }else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(shared_sam_mat, method = 'spearman') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_sam_mat, method = 'spearman')
 }
 
 # Melt the correlation matrix
@@ -2395,9 +2386,9 @@ if(all(co1 == co2) & all(ro1 == ro2)){
 Corr <- 'Spearman'
 # Create an NxN Matrix of correlation
 if(Corr == 'Pearson'){
-        cor1 <- stats::cor(shared_met_mat, method = 'pearson') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_met_mat, method = 'pearson')
 }else if(Corr == 'Spearman'){
-        cor1 <- stats::cor(shared_met_mat, method = 'spearman') %>% round(digits = 3)
+        cor1 <- stats::cor(shared_met_mat, method = 'spearman')
 }
 
 # Reorder the heatmap

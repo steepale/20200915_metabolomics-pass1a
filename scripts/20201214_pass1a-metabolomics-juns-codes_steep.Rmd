@@ -104,7 +104,6 @@ duke2 <- duke
 paletteLength <- 100
 redblue100 <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
 
-
 broad <- readRDS("/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/files_to_share/20201103_named-site-comparison-0001_brown-adipose_m70-s77_broad-institute-hilicpos_steep.RDS")
 umich <- readRDS("/Volumes/Frishman_4TB/motrpac/20200915_metabolomics-pass1a/files_to_share/20201103_named-site-comparison-0001_brown-adipose_m70-s77_university-of-michigan-rppos_steep.RDS")
 
