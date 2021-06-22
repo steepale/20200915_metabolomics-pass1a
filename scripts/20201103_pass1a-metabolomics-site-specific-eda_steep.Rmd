@@ -1105,14 +1105,13 @@ run_df <- df_shared_casrun %>%
 comp_ids <- c('0001','0002','0003','0004','0005','0006','0007','0008','0009')
 
 
-comp_ids <- c('0001','0002','0003','0004','0005','0006','0007','0008','0009')
+comp_ids <- c('0005')
 norm_orders <- c('feat_sam')
-norm_logs <- c('none')
-sam_norm_centers <- c('none')
+norm_logs <- c('log10')
+sam_norm_centers <- c('mean')
 sam_norm_scales <- c('none')
 feat_norm_centers <- c('mean')
 feat_norm_scales <- c('sd')
-ptm <- proc.time()
 i <- 1
 norm_all_df <- data.frame()
 # Prepare Data for the 2 site comparison, then run comparisons
@@ -1220,7 +1219,6 @@ out_df <- data.frame(TISSUE = tissue,
 norm_all_df <- rbind(norm_all_df, out_df)
 i <- i + 1
 }}}}}}}
-proc.time() - ptm
 
 names(norm_all_df)[8] <- 'SXS_RANK'
 names(norm_all_df)[9] <- 'FXF_RANK'
